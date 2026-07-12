@@ -1,0 +1,13 @@
+---
+apiVersion: devicenetwork.io/v1alpha1
+kind: DeviceNetwork
+metadata:
+  name: all-network
+spec:
+  deviceSelectors:
+  - name: "all-interfaces"
+  deviceConfigurations: 
+  - name: "macvlan"
+    deviceType: Macvlan
+    deviceSelectors:
+    - "all-interfaces"

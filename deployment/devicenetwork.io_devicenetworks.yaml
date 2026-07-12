@@ -1,0 +1,303 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.21.0
+  name: devicenetworks.devicenetwork.io
+spec:
+  group: devicenetwork.io
+  names:
+    categories:
+    - podnetwork
+    - podnetworks
+    - all
+    kind: DeviceNetwork
+    listKind: DeviceNetworkList
+    plural: devicenetworks
+    shortNames:
+    - hnd
+    singular: devicenetwork
+  scope: Cluster
+  versions:
+  - name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: DeviceNetwork is a specification for a DeviceNetwork resource.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: |-
+              Specification of the desired behavior of the DeviceNetwork.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#spec-and-status
+            properties:
+              deviceConfigurations:
+                description: |-
+                  DeviceConfigurations defines the configuration for
+                  network devices selected by the DeviceSelector.
+
+                  The maximum number of DeviceConfigurations is 4. This limit could be increased
+                  in the future based on the actual needs.
+                items:
+                  description: |-
+                    DeviceConfiguration defines the configuration for network
+                    devices selected by the DeviceSelector.
+
+                    Based on the DeviceType, the network devices selected by the DeviceSelector
+                    which do not support the specified DeviceType will be filtered out and will
+                    not be considered.
+                    For example, if the DeviceType is "vlan", then the selected network devices
+                    which are already configured as "vlan" interface will not be considered as Linux
+                    does not allow creating a vlan interface on top of a device which is already configured
+                    as vlan.
+                  properties:
+                    deviceSelectors:
+                      description: |-
+                        DeviceSelectors defines the selections for network
+                        devices to which this configuration will be applied.
+                        All the selected network devices will be configured according to this configuration.
+                        This field is required and must reference at least one DeviceSelector.
+                        A DeviceSelector cannot be referenced multiple times by the same DeviceConfiguration.
+                      items:
+                        type: string
+                      type: array
+                    deviceType:
+                      description: |-
+                        DeviceType defines how the selected network device
+                        will be configured in the Pod.
+                        If not specified, the default value is "HostDevice".
+                      type: string
+                    hostDevice:
+                      description: |-
+                        HostDevice is the configuration for HostDevice device type.
+                        This field can be set only when DeviceType is "HostDevice".
+                      type: object
+                    macvlan:
+                      description: |-
+                        Macvlan is the configuration for Macvlan device type.
+                        This field can be set only when DeviceType is "Macvlan".
+                      properties:
+                        mode:
+                          description: |-
+                            Mode is the mode of the created Macvlan interface. If not specified,
+                             the default value is "bridge".
+                          type: string
+                      type: object
+                    name:
+                      description: |-
+                        Name is an identifier for this configuration.
+                        It can be used to reference this configuration from other resources.
+                      type: string
+                  required:
+                  - deviceSelectors
+                  - name
+                  type: object
+                type: array
+              deviceSelectors:
+                description: |-
+                  DeviceSelectors selects network devices on
+                  specific nodes based on the specified selection criteria.
+
+                  The maximum number of DeviceSelectors is 4. This limit could be increased
+                  in the future based on the actual needs.
+                items:
+                  description: |-
+                    DeviceSelector represents the selection criteria for selecting network
+                    devices on specific nodes.
+                    A DeviceSelector must be referenced by at least one DeviceConfiguration and can
+                    be referenced by multiple DeviceConfigurations.
+                  properties:
+                    name:
+                      description: |-
+                        Name is the identifier for this selection. The name is used to reference
+                        this selection from the DeviceConfigurations.
+                      type: string
+                    nodeSelector:
+                      description: |-
+                        NodeSelector defines on which nodes the selectors will be applied.
+                        If not specified, the selectors will be applied on all nodes.
+                      properties:
+                        nodeSelectorTerms:
+                          description: Required. A list of node selector terms. The
+                            terms are ORed.
+                          items:
+                            description: |-
+                              A null or empty node selector term matches no objects. The requirements of
+                              them are ANDed.
+                              The TopologySelectorTerm type implements a subset of the NodeSelectorTerm.
+                            properties:
+                              matchExpressions:
+                                description: A list of node selector requirements
+                                  by node's labels.
+                                items:
+                                  description: |-
+                                    A node selector requirement is a selector that contains values, a key, and an operator
+                                    that relates the key and values.
+                                  properties:
+                                    key:
+                                      description: The label key that the selector
+                                        applies to.
+                                      type: string
+                                    operator:
+                                      description: |-
+                                        Represents a key's relationship to a set of values.
+                                        Valid operators are In, NotIn, Exists, DoesNotExist. Gt, and Lt.
+                                      type: string
+                                    values:
+                                      description: |-
+                                        An array of string values. If the operator is In or NotIn,
+                                        the values array must be non-empty. If the operator is Exists or DoesNotExist,
+                                        the values array must be empty. If the operator is Gt or Lt, the values
+                                        array must have a single element, which will be interpreted as an integer.
+                                        This array is replaced during a strategic merge patch.
+                                      items:
+                                        type: string
+                                      type: array
+                                      x-kubernetes-list-type: atomic
+                                  required:
+                                  - key
+                                  - operator
+                                  type: object
+                                type: array
+                                x-kubernetes-list-type: atomic
+                              matchFields:
+                                description: A list of node selector requirements
+                                  by node's fields.
+                                items:
+                                  description: |-
+                                    A node selector requirement is a selector that contains values, a key, and an operator
+                                    that relates the key and values.
+                                  properties:
+                                    key:
+                                      description: The label key that the selector
+                                        applies to.
+                                      type: string
+                                    operator:
+                                      description: |-
+                                        Represents a key's relationship to a set of values.
+                                        Valid operators are In, NotIn, Exists, DoesNotExist. Gt, and Lt.
+                                      type: string
+                                    values:
+                                      description: |-
+                                        An array of string values. If the operator is In or NotIn,
+                                        the values array must be non-empty. If the operator is Exists or DoesNotExist,
+                                        the values array must be empty. If the operator is Gt or Lt, the values
+                                        array must have a single element, which will be interpreted as an integer.
+                                        This array is replaced during a strategic merge patch.
+                                      items:
+                                        type: string
+                                      type: array
+                                      x-kubernetes-list-type: atomic
+                                  required:
+                                  - key
+                                  - operator
+                                  type: object
+                                type: array
+                                x-kubernetes-list-type: atomic
+                            type: object
+                            x-kubernetes-map-type: atomic
+                          type: array
+                          x-kubernetes-list-type: atomic
+                      required:
+                      - nodeSelectorTerms
+                      type: object
+                      x-kubernetes-map-type: atomic
+                    selectors:
+                      description: |-
+                        Selectors defines the selection criteria for selecting device networks.
+                        Each selector must be satisfied for a device network to be selected by
+                        this DeviceSelector.
+                        If no selectors are specified, then this selection matches all devices.
+
+                        The maximum number of selectors is 1. This limit could be increased in the future
+                        based on the actual needs.
+                      items:
+                        description: DeviceSelector must have exactly one field set.
+                        properties:
+                          cel:
+                            description: CEL contains a CEL expression for selecting
+                              a device.
+                            properties:
+                              expression:
+                                description: |-
+                                  Expression is a CEL expression which evaluates network devices.
+                                  It must evaluate to true when the devices under consideration satisfies
+                                  the desired criteria, and false when it does not.
+
+                                  The expression's input is an object named "device", which carries
+                                  the following properties:
+                                   - attributes (map[string]object): the device's attributes.
+                                   - capacity (map[string]object): the device's capacities.
+
+                                  Example: Consider a set of network devices which are rdma capable and
+                                  that are infiniBand devices. These devices would have the following attributes:
+
+                                      device.rdmaCapable = true && device.linkType = "infiniband"
+
+                                  A robust expression should check for the existence of attributes
+                                  before referencing them.
+
+                                  The length of the expression must be smaller or equal to 10 Ki. The
+                                  cost of evaluating it is also limited based on the estimated number
+                                  of logical steps.
+                                type: string
+                            required:
+                            - expression
+                            type: object
+                        type: object
+                      type: array
+                      x-kubernetes-list-type: atomic
+                  required:
+                  - name
+                  type: object
+                type: array
+              networkInterfaceConfiguration:
+                description: |-
+                  NetworkInterfaceConfiguration defines the configuration for the network interface
+                  created based on the selected network device and the DeviceConfiguration.
+                  The configuration will be applied to all the network interfaces created based
+                  on the selected network device and the DeviceConfiguration.
+                properties:
+                  ipam:
+                    description: |-
+                      IPAM represents the IP address management configuration for the created
+                      network interface.
+                    items:
+                      description: IPAM represents the IP address management configuration
+                        for the created network interface.
+                      properties:
+                        provider:
+                          description: Provider represents the provider of IP address
+                            management for the created network interface.
+                          type: string
+                      type: object
+                    type: array
+                type: object
+            required:
+            - deviceConfigurations
+            - deviceSelectors
+            type: object
+          status:
+            description: |-
+              Most recently observed status of the DeviceNetwork.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#spec-and-status
+            type: object
+        type: object
+    served: true
+    storage: true

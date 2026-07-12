@@ -1,0 +1,44 @@
+---
+apiVersion: resource.k8s.io/v1
+kind: ResourceClaimTemplate
+metadata:
+  name: all-network
+spec:
+  spec:
+    devices:
+      requests:
+      - name: all-network
+        exactly:
+          deviceClassName: devicenetwork
+          allocationMode: ExactCount
+          count: 1
+          selectors:
+          - cel:
+              expression: device.attributes["multinetwork.networking.k8s.io"].podNetwork == "all-network"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: demo
+  labels:
+    app: demo
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: demo
+  template:
+    metadata:
+      labels:
+        app: demo
+    spec:
+      containers:
+      - name: alpine
+        image: alpine:latest
+        imagePullPolicy: IfNotPresent
+        command:
+        - sleep
+        - infinity
+      resourceClaims:
+      - name: all-network
+        resourceClaimTemplateName: all-network

@@ -1,0 +1,9 @@
+---
+apiVersion: resource.k8s.io/v1
+kind: DeviceClass
+metadata:
+  name: devicenetwork
+spec:
+  selectors:
+  - cel:
+      expression: device.driver == "devicenetwork.io" && device.attributes["multinetwork.networking.k8s.io"].networkKind == "devicenetwork"
