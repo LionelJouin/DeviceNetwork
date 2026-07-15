@@ -49,6 +49,7 @@ type DeviceNetworkController struct {
 
 func NewDeviceNetworkController(
 	nodeName string,
+	networkKind string,
 	deviceNetworkInformer v1alpha1devicenetworkinformers.DeviceNetworkInformer,
 	nodeInformer coreinformers.NodeInformer,
 	deviceCache *device.DeviceCache,
@@ -67,6 +68,7 @@ func NewDeviceNetworkController(
 
 	deviceNetworkReconciler, err := NewDeviceNetworkReconciler(
 		nodeName,
+		networkKind,
 		nodeInformer.Lister(),
 		deviceNetworkInformer.Lister(),
 		publishResourcesFunc,

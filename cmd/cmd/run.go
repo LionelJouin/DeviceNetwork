@@ -29,6 +29,7 @@ import (
 	"github.com/lioneljouin/devicenetwork/pkg/controllers/devicenetwork"
 	"github.com/lioneljouin/devicenetwork/pkg/device"
 	"github.com/lioneljouin/devicenetwork/pkg/driver"
+	"github.com/lioneljouin/devicenetwork/pkg/resolver"
 	"github.com/lioneljouin/devicenetwork/pkg/store"
 	"github.com/spf13/cobra"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -133,6 +134,21 @@ func (ro *runOptions) run(ctx context.Context) error {
 	nodeInformerFactory := kubeinformers.NewSharedInformerFactoryWithOptions(kubeClient, defaultInformerResyncPeriod, kubeinformers.WithTweakListOptions(func(options *metav1.ListOptions) {
 		options.FieldSelector = fields.OneTermEqualSelector("metadata.name", ro.NodeName).String()
 	}))
+	resourceSliceInformerFactory := kubeinformers.NewSharedInformerFactoryWithOptions(kubeClient, defaultInformerResyncPeriod, kubeinformers.WithTweakListOptions(func(options *metav1.ListOptions) {
+		options.FieldSelector = fields.AndSelectors(
+			fields.OneTermEqualSelector("spec.driver", ro.DRADriverName),
+			fields.OneTermEqualSelector("spec.nodeName", ro.NodeName),
+		).String()
+	}))
+
+	resolver, err := resolver.NewResolver(
+		ro.networkKind,
+		resourceSliceInformerFactory.Resource().V1().ResourceSlices(),
+		deviceNetworkInformerFactory.Devicenetwork().V1alpha1().DeviceNetworks(),
+	)
+	if err != nil {
+		return fmt.Errorf("failed to create resolver: %v", err)
+	}
 
 	memoryStore := store.NewMemory()
 
@@ -142,6 +158,7 @@ func (ro *runOptions) run(ctx context.Context) error {
 		ro.NodeName,
 		kubeClient,
 		memoryStore,
+		resolver,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to dra.Start: %v", err)
@@ -160,6 +177,7 @@ func (ro *runOptions) run(ctx context.Context) error {
 
 	deviceNetworkController, err := devicenetwork.NewDeviceNetworkController(
 		ro.NodeName,
+		ro.networkKind,
 		deviceNetworkInformerFactory.Devicenetwork().V1alpha1().DeviceNetworks(),
 		nodeInformerFactory.Core().V1().Nodes(),
 		deviceCache,
@@ -172,9 +190,18 @@ func (ro *runOptions) run(ctx context.Context) error {
 
 	deviceNetworkInformerFactory.Start(ctx.Done())
 	nodeInformerFactory.Start(ctx.Done())
+	resourceSliceInformerFactory.Start(ctx.Done())
 
 	deviceNetworkInformerFactory.WaitForCacheSync(ctx.Done())
 	nodeInformerFactory.WaitForCacheSync(ctx.Done())
+	resourceSliceInformerFactory.WaitForCacheSync(ctx.Done())
+
+	go func() {
+		err = resolver.Run(ctx, 1)
+		if err != nil && err != context.Canceled && err != context.DeadlineExceeded {
+			klog.FromContext(ctx).Error(err, "failed to run resolver")
+		}
+	}()
 
 	go func() {
 		err = deviceCache.Run(ctx, 1)

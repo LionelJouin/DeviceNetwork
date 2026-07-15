@@ -305,3 +305,24 @@ type DeviceNetworkList struct {
 
 	Items []DeviceNetwork `json:"items"`
 }
+
+type ResourceClaimDeviceStatusData struct {
+	// Macvlan is the configuration for Macvlan device type.
+	// This field can be set only when DeviceType is "Macvlan".
+	//
+	// +optional
+	Macvlan *MacvlanStatus `json:"macvlan,omitempty"`
+}
+
+type MacvlanStatus struct {
+	// ParentName is the name of the parent network device on which
+	// the Macvlan interface is created.
+	ParentName string `json:"parentName,omitempty"`
+
+	// ParentIndex is the index of the parent network device on which
+	// the Macvlan interface is created.
+	ParentIndex int `json:"parentIndex,omitempty"`
+
+	// Mode is the mode of the created Macvlan interface.
+	Mode int `json:"mode,omitempty"`
+}

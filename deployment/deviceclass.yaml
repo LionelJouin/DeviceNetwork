@@ -6,4 +6,4 @@ metadata:
 spec:
   selectors:
   - cel:
-      expression: device.driver == "devicenetwork.io" && device.attributes["multinetwork.networking.k8s.io"].networkKind == "devicenetwork"
+      expression: device.driver == "devicenetwork.io" && device.attributes["multinetwork.networking.k8s.io"].networkKind == "devicenetwork.io"

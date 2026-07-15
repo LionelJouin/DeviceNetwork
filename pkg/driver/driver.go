@@ -26,12 +26,17 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/lioneljouin/devicenetwork/pkg/resolver"
 	resourcev1 "k8s.io/api/resource/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
+	metav1apply "k8s.io/client-go/applyconfigurations/meta/v1"
+	resourceapply "k8s.io/client-go/applyconfigurations/resource/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/dynamic-resource-allocation/kubeletplugin"
 	"k8s.io/dynamic-resource-allocation/resourceslice"
+	"k8s.io/dynamic-resource-allocation/structured"
 	"k8s.io/klog/v2"
 )
 
@@ -48,6 +53,7 @@ type Driver struct {
 	kubeClient       kubernetes.Interface
 	draPlugin        *kubeletplugin.Helper
 	podResourceStore PodResourceStore
+	deviceResolver   *resolver.Resolver
 }
 
 // Start the DRA Kubelet plugin.
@@ -57,11 +63,13 @@ func Start(
 	nodeName string,
 	kubeClient kubernetes.Interface,
 	podResourceStore PodResourceStore,
+	deviceResolver *resolver.Resolver,
 ) (*Driver, error) {
 	driver := &Driver{
 		driverName:       driverName,
 		kubeClient:       kubeClient,
 		podResourceStore: podResourceStore,
+		deviceResolver:   deviceResolver,
 	}
 
 	driverPluginPath := filepath.Join("/var/lib/kubelet/plugins/", driverName)
@@ -151,7 +159,16 @@ func (d *Driver) UnprepareResourceClaims(ctx context.Context, claims []kubeletpl
 }
 
 func (d *Driver) nodePrepareResource(ctx context.Context, claim *resourcev1.ResourceClaim) ([]kubeletplugin.Device, error) {
-	d.podResourceStore.Add(claim.Status.ReservedFor[0].UID, claim)
+	if len(claim.Status.ReservedFor) != 1 {
+		return nil, fmt.Errorf("expected exactly one reservation for claim, got %d", len(claim.Status.ReservedFor))
+	}
+
+	updatedResourceClaim, err := d.setStatus(ctx, claim)
+	if err != nil {
+		return nil, fmt.Errorf("failed to set status for claim %s/%s: %v", claim.Namespace, claim.Name, err)
+	}
+
+	d.podResourceStore.Add(updatedResourceClaim.Status.ReservedFor[0].UID, updatedResourceClaim)
 
 	var devices []kubeletplugin.Device
 
@@ -176,4 +193,80 @@ func (d *Driver) nodePrepareResource(ctx context.Context, claim *resourcev1.Reso
 func (d *Driver) nodeUnprepareResource(_ context.Context, _ string) error {
 	// TODO
 	return nil
+}
+
+func (d *Driver) setStatus(
+	ctx context.Context,
+	claim *resourcev1.ResourceClaim,
+) (*resourcev1.ResourceClaim, error) {
+	resolvedDevices, err := d.deviceResolver.GetDevices(d.driverName, claim)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get devices for claim: %v", err)
+	}
+
+	resolvedDevicesMap := map[string]*resolver.Device{}
+	for _, resolvedDevice := range resolvedDevices {
+		structuredID := structured.MakeSharedDeviceID(
+			structured.MakeDeviceID(
+				resolvedDevice.DeviceRequestAllocationResult.Driver,
+				resolvedDevice.DeviceRequestAllocationResult.Pool,
+				resolvedDevice.DeviceRequestAllocationResult.Device,
+			), nil)
+
+		resolvedDevicesMap[structuredID.String()] = resolvedDevice
+	}
+
+	for _, statusDevice := range claim.Status.Devices {
+		structuredID := structured.MakeSharedDeviceID(
+			structured.MakeDeviceID(
+				statusDevice.Driver,
+				statusDevice.Pool,
+				statusDevice.Device,
+			), nil)
+
+		_, exists := resolvedDevicesMap[structuredID.String()]
+		if !exists {
+			continue
+		}
+
+		// Remove the device from the map if it exists in the claim status so
+		// that we don't add it again.
+		delete(resolvedDevicesMap, structuredID.String())
+	}
+
+	statusUpdates := &resourceapply.ResourceClaimStatusApplyConfiguration{Devices: []resourceapply.AllocatedDeviceStatusApplyConfiguration{}}
+
+	for _, device := range resolvedDevicesMap {
+
+		resourceClaimStatusDevice := resourceapply.
+			AllocatedDeviceStatus().
+			WithDevice(device.DeviceRequestAllocationResult.Device).
+			WithDriver(device.DeviceRequestAllocationResult.Driver).
+			WithPool(device.DeviceRequestAllocationResult.Pool)
+		if device.DeviceRequestAllocationResult.ShareID != nil {
+			resourceClaimStatusDevice.WithShareID(string(*(device.DeviceRequestAllocationResult.ShareID)))
+		}
+
+		resourceClaimStatusDevice.WithConditions(
+			metav1apply.Condition().
+				WithType("Ready").
+				WithReason("Allocated").
+				WithStatus(metav1.ConditionTrue).
+				WithLastTransitionTime(metav1.Now()),
+		)
+
+		statusUpdates.WithDevices(resourceClaimStatusDevice)
+	}
+
+	resourceClaimApply := resourceapply.ResourceClaim(claim.GetName(), claim.GetNamespace()).WithStatus(statusUpdates)
+	updatedResourceClaim, err := d.kubeClient.ResourceV1().ResourceClaims(claim.GetNamespace()).ApplyStatus(
+		ctx,
+		resourceClaimApply,
+		metav1.ApplyOptions{FieldManager: d.driverName, Force: true},
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to update resource claim status: %v", err)
+	}
+
+	return updatedResourceClaim, nil
 }
