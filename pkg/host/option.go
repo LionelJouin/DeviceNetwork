@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package device
+package host
 
 import (
 	"github.com/lioneljouin/devicenetwork/apis/v1alpha1"

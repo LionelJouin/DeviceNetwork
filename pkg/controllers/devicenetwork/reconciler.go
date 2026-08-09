@@ -22,7 +22,8 @@ import (
 
 	"github.com/lioneljouin/devicenetwork/apis/v1alpha1"
 	deviceNetworkListers "github.com/lioneljouin/devicenetwork/pkg/client/listers/apis/v1alpha1"
-	"github.com/lioneljouin/devicenetwork/pkg/device"
+	"github.com/lioneljouin/devicenetwork/pkg/configurators"
+	"github.com/lioneljouin/devicenetwork/pkg/host"
 	corev1 "k8s.io/api/core/v1"
 	resourcev1 "k8s.io/api/resource/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -35,16 +36,12 @@ import (
 // PublishResources is a function type to advertise resources.
 type PublishResources func(context.Context, resourceslice.DriverResources) error
 
-type DeviceConfigurator interface {
-	ConfigureExposedDevice(ctx context.Context, deviceConfiguration v1alpha1.DeviceConfiguration, device *device.Device) *resourcev1.Device
-}
-
 type DeviceNetworkReconciler struct {
 	nodeName string
 
 	networkKind string
 
-	deviceCache *device.DeviceCache
+	deviceCache *host.DeviceCache
 
 	nodeLister corev1listers.NodeLister
 
@@ -52,7 +49,7 @@ type DeviceNetworkReconciler struct {
 
 	publishResourcesFunc PublishResources
 
-	deviceConfigurators map[v1alpha1.DeviceType]DeviceConfigurator
+	deviceConfigurators map[v1alpha1.DeviceType]configurators.Configurator
 }
 
 func NewDeviceNetworkReconciler(
@@ -61,8 +58,8 @@ func NewDeviceNetworkReconciler(
 	nodeLister corev1listers.NodeLister,
 	deviceNetworkLister deviceNetworkListers.DeviceNetworkLister,
 	publishResourcesFunc PublishResources,
-	deviceCache *device.DeviceCache,
-	deviceConfigurators map[v1alpha1.DeviceType]DeviceConfigurator,
+	deviceCache *host.DeviceCache,
+	deviceConfigurators map[v1alpha1.DeviceType]configurators.Configurator,
 ) (*DeviceNetworkReconciler, error) {
 	dnr := &DeviceNetworkReconciler{
 		nodeName:             nodeName,
@@ -106,12 +103,12 @@ func (dnr *DeviceNetworkReconciler) getResources(
 	ctx context.Context,
 	deviceNetworks []*v1alpha1.DeviceNetwork,
 	currentNode *corev1.Node,
-	deviceConfigurators map[v1alpha1.DeviceType]DeviceConfigurator,
+	deviceConfigurators map[v1alpha1.DeviceType]configurators.Configurator,
 ) resourceslice.DriverResources {
 	resourceDevices := []resourcev1.Device{}
 
 	for _, deviceNetwork := range deviceNetworks {
-		deviceForSelector := map[string][]*device.Device{}
+		deviceForSelector := map[string][]*host.Device{}
 		for _, deviceSelector := range deviceNetwork.Spec.DeviceSelectors {
 			if deviceSelector.NodeSelector != nil {
 				applyToNode, err := schedulingcorev1.MatchNodeSelectorTerms(currentNode, deviceSelector.NodeSelector)
@@ -120,7 +117,7 @@ func (dnr *DeviceNetworkReconciler) getResources(
 				}
 			}
 
-			devices := dnr.deviceCache.List(ctx, device.WithSelectors(deviceSelector.Selectors))
+			devices := dnr.deviceCache.List(ctx, host.WithSelectors(deviceSelector.Selectors))
 			deviceForSelector[deviceSelector.Name] = devices
 		}
 
@@ -139,9 +136,9 @@ func (dnr *DeviceNetworkReconciler) getResources(
 
 				for _, dvc := range devices {
 					// check if the device is already configured
-					resourceDevice := configurator.ConfigureExposedDevice(ctx, deviceConfiguration, dvc)
-					if resourceDevice == nil {
-						continue
+					resourceDevice, err := configurator.ExposedDevice(ctx, dvc, nil)
+					if err != nil || resourceDevice == nil {
+						continue // todo
 					}
 
 					resourceDevice.Name = DeviceName(deviceNetwork.Name, deviceConfiguration.Name, dvc.Name)
@@ -149,10 +146,11 @@ func (dnr *DeviceNetworkReconciler) getResources(
 						resourceDevice.Attributes = map[resourcev1.QualifiedName]resourcev1.DeviceAttribute{}
 					}
 
-					resourceDevice.Attributes[resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributesDeviceType)] = resourcev1.DeviceAttribute{StringValue: (*string)(&deviceType)}
-					resourceDevice.Attributes[resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributesPodNetwork)] = resourcev1.DeviceAttribute{StringValue: &deviceNetwork.Name}
-					resourceDevice.Attributes[resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributesNetworkKind)] = resourcev1.DeviceAttribute{StringValue: &dnr.networkKind}
-					resourceDevice.Attributes[resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributesDeviceConfiguration)] = resourcev1.DeviceAttribute{StringValue: &deviceConfiguration.Name}
+					resourceDevice.Attributes[resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributeDeviceType)] = resourcev1.DeviceAttribute{StringValue: (*string)(&deviceType)}
+					resourceDevice.Attributes[resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributePodNetwork)] = resourcev1.DeviceAttribute{StringValue: &deviceNetwork.Name}
+					resourceDevice.Attributes[resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributeNetworkKind)] = resourcev1.DeviceAttribute{StringValue: &dnr.networkKind}
+					resourceDevice.Attributes[resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributeDeviceConfiguration)] = resourcev1.DeviceAttribute{StringValue: &deviceConfiguration.Name}
+					resourceDevice.Attributes[resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributeHostDeviceName)] = resourcev1.DeviceAttribute{StringValue: &dvc.Name}
 
 					resourceDevices = append(resourceDevices, *resourceDevice)
 				}

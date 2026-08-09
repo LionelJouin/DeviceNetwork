@@ -24,7 +24,8 @@ import (
 
 	"github.com/lioneljouin/devicenetwork/apis/v1alpha1"
 	v1alpha1devicenetworkinformers "github.com/lioneljouin/devicenetwork/pkg/client/informers/externalversions/apis/v1alpha1"
-	"github.com/lioneljouin/devicenetwork/pkg/device"
+	"github.com/lioneljouin/devicenetwork/pkg/configurators"
+	"github.com/lioneljouin/devicenetwork/pkg/host"
 	"k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	coreinformers "k8s.io/client-go/informers/core/v1"
@@ -37,10 +38,14 @@ const (
 	queueName = "device_network"
 )
 
+type reconciler interface {
+	Reconcile(ctx context.Context) error
+}
+
 type DeviceNetworkController struct {
 	queue workqueue.TypedRateLimitingInterface[string]
 
-	deviceNetworkReconciler *DeviceNetworkReconciler
+	deviceNetworkReconciler reconciler
 
 	deviceNetworkSynced cache.InformerSynced
 	deviceCacheSynced   cache.InformerSynced
@@ -52,9 +57,9 @@ func NewDeviceNetworkController(
 	networkKind string,
 	deviceNetworkInformer v1alpha1devicenetworkinformers.DeviceNetworkInformer,
 	nodeInformer coreinformers.NodeInformer,
-	deviceCache *device.DeviceCache,
+	deviceCache *host.DeviceCache,
 	publishResourcesFunc PublishResources,
-	deviceConfigurators map[v1alpha1.DeviceType]DeviceConfigurator,
+	deviceConfigurators map[v1alpha1.DeviceType]configurators.Configurator,
 ) (*DeviceNetworkController, error) {
 	dnc := &DeviceNetworkController{
 		deviceNetworkSynced: deviceNetworkInformer.Informer().HasSynced,

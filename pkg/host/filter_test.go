@@ -14,47 +14,47 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package device_test
+package host_test
 
 import (
 	"context"
 	"slices"
 	"testing"
 
-	"github.com/lioneljouin/devicenetwork/pkg/device"
+	"github.com/lioneljouin/devicenetwork/pkg/host"
 )
 
 func TestEvalDevices(t *testing.T) {
 	tests := []struct {
 		name       string
 		expression string
-		devices    []*device.Device
-		want       []*device.Device
+		devices    []*host.Device
+		want       []*host.Device
 		wantErr    bool
 	}{
 		{
 			name:       "valid-expression-no-device",
 			expression: "interfaceName == 'eth0'",
-			devices:    []*device.Device{},
-			want:       []*device.Device{},
+			devices:    []*host.Device{},
+			want:       []*host.Device{},
 			wantErr:    false,
 		},
 		{
 			name:       "valid-expression-two-devices-one-match",
 			expression: "interfaceName == 'eth0'",
-			devices: []*device.Device{
-				{Spec: device.DeviceSpec{InterfaceName: "eth0"}},
-				{Spec: device.DeviceSpec{InterfaceName: "eth1"}},
+			devices: []*host.Device{
+				{Spec: host.DeviceSpec{InterfaceName: "eth0"}},
+				{Spec: host.DeviceSpec{InterfaceName: "eth1"}},
 			},
-			want: []*device.Device{
-				{Spec: device.DeviceSpec{InterfaceName: "eth0"}},
+			want: []*host.Device{
+				{Spec: host.DeviceSpec{InterfaceName: "eth0"}},
 			},
 			wantErr: false,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, gotErr := device.EvalDevices(context.Background(), tt.expression, tt.devices)
+			got, gotErr := host.EvalDevices(context.Background(), tt.expression, tt.devices)
 			if gotErr != nil {
 				if !tt.wantErr {
 					t.Errorf("EvalDevices() failed: %v", gotErr)
@@ -64,7 +64,7 @@ func TestEvalDevices(t *testing.T) {
 			if tt.wantErr {
 				t.Fatal("EvalDevices() succeeded unexpectedly")
 			}
-			if !slices.EqualFunc(got, tt.want, func(a, b *device.Device) bool {
+			if !slices.EqualFunc(got, tt.want, func(a, b *host.Device) bool {
 				return a.Spec.InterfaceName == b.Spec.InterfaceName
 			}) {
 				t.Errorf("EvalDevices() = %v, want %v", got, tt.want)

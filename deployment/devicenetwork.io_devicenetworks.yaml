@@ -286,6 +286,16 @@ spec:
                           description: Provider represents the provider of IP address
                             management for the created network interface.
                           type: string
+                        random:
+                          description: |-
+                            Random represents the configuration for the random IPAM provider.
+                            This field can be set only when Provider is "random".
+                          properties:
+                            cidr:
+                              description: CIDR is the CIDR from which the random
+                                IP address will be assigned.
+                              type: string
+                          type: object
                       type: object
                     type: array
                 type: object

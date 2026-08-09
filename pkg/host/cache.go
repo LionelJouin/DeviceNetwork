@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package device
+package host
 
 import (
 	"context"
@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/jaypipes/ghw"
+	"github.com/lioneljouin/devicenetwork/apis/v1alpha1"
 	"github.com/vishvananda/netlink"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
@@ -38,8 +39,7 @@ import (
 const (
 	queueName = "device_cache"
 
-	kind       = "Device"
-	apiVersion = "devicenetwork.io/v1alpha1"
+	kind = "Device"
 )
 
 type DeviceCache struct {
@@ -78,7 +78,7 @@ func NewDeviceCache(
 					deviceList := &DeviceList{
 						TypeMeta: metav1.TypeMeta{
 							Kind:       kind,
-							APIVersion: apiVersion,
+							APIVersion: v1alpha1.GroupVersion.String(),
 						},
 						ListMeta: metav1.ListMeta{},
 						Items:    []Device{},
@@ -164,6 +164,11 @@ func (dc *DeviceCache) Informer() cache.SharedIndexInformer {
 	return dc.informer
 }
 
+// Broadcaster returns the underlying Broadcaster.
+func (dc *DeviceCache) Broadcaster() *watch.Broadcaster {
+	return dc.watcher
+}
+
 // AddEventHandler registers an event handler with the synthetic informer.
 func (dc *DeviceCache) AddEventHandler(handler cache.ResourceEventHandlerFuncs) (cache.ResourceEventHandlerRegistration, error) {
 	return dc.informer.AddEventHandler(handler)
@@ -172,6 +177,26 @@ func (dc *DeviceCache) AddEventHandler(handler cache.ResourceEventHandlerFuncs) 
 // HasSynced returns true once the cache has completed its initial sync.
 func (dc *DeviceCache) HasSynced() bool {
 	return dc.informer.HasSynced()
+}
+
+// Get returns the Device for a specific device key.
+func (dc *DeviceCache) Get(name string) (*Device, error) {
+	key := name
+
+	obj, exists, err := dc.informer.GetStore().GetByKey(key)
+	if err != nil {
+		return nil, fmt.Errorf("error getting device for key %s: %w", key, err)
+	}
+	if !exists {
+		return nil, fmt.Errorf("device for key %s not found", key)
+	}
+
+	device, ok := obj.(*Device)
+	if !ok {
+		return nil, fmt.Errorf("unexpected type for device for key %s", key)
+	}
+
+	return device, nil
 }
 
 // List returns all Devices matching the given options.
@@ -272,19 +297,23 @@ func (dc *DeviceCache) buildDevice(link netlink.Link) *Device {
 	result := &Device{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       kind,
-			APIVersion: apiVersion,
+			APIVersion: v1alpha1.GroupVersion.String(),
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name: link.Attrs().Name,
 		},
 		Spec: DeviceSpec{
-			InterfaceName: link.Attrs().Name,
+			InterfaceName:  link.Attrs().Name,
+			InterfaceIndex: link.Attrs().Index,
 		},
 	}
 
 	return result
 }
 
+// listWatch wraps a ListerWatcher to opt out of the WatchList streaming
+// protocol. Synthetic informers backed by a watch.Broadcaster do not support
+// SendInitialEvents / bookmark signaling.
 type listWatch struct {
 	cache.ListWatch
 }

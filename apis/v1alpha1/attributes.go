@@ -16,44 +16,60 @@ limitations under the License.
 
 package v1alpha1
 
-import multinetworkv1alpha1 "github.com/kubernetes-sigs/multi-network-api/apis/v1alpha1"
+import (
+	multinetworkv1alpha1 "github.com/kubernetes-sigs/multi-network-api/apis/v1alpha1"
+)
 
 // NetworkInterfaceAttribute represents the attributes of a network interface.
 type NetworkInterfaceAttribute string
 
-const (
-	// NetworkInterfaceAttributesPrefix is the prefix used for network interface attributes.
-	NetworkInterfaceAttributesPrefix = "devicenetwork.io"
+// NetworkInterfaceCapacity represents the capacities of a network interface.
+type NetworkInterfaceCapacity string
 
-	// NetworkInterfaceAttributesDeviceType represents the type of the network interface to be configured.
+const (
+	// NetworkInterfaceAttributePrefix is the prefix used for network interface attributes.
+	NetworkInterfaceAttributePrefix = "devicenetwork.io"
+
+	// NetworkInterfaceAttributeDeviceType represents the type of the network interface to be configured.
 	// This is determined by the deviceType field in the DeviceConfiguration.
 	// e.g. HostDevice, Macvlan...
 	// The value type of this attribute is string.
 	// This atttribute is always present for devices created from a DeviceNetwork.
-	NetworkInterfaceAttributesDeviceType NetworkInterfaceAttribute = NetworkInterfaceAttributesPrefix + "/" + "deviceType"
-	// NetworkInterfaceAttributesPodNetwork represents the name of the DeviceNetwork object used to configure this
+	NetworkInterfaceAttributeDeviceType NetworkInterfaceAttribute = NetworkInterfaceAttributePrefix + "/" + "deviceType"
+	// NetworkInterfaceAttributePodNetwork represents the name of the DeviceNetwork object used to configure this
 	// device.
 	// The value type of this attribute is string.
 	// This atttribute is always present for devices created from a DeviceNetwork.
-	NetworkInterfaceAttributesPodNetwork NetworkInterfaceAttribute = NetworkInterfaceAttribute(multinetworkv1alpha1.StandardDeviceAttributePodNetwork)
-	// NetworkInterfaceAttributesNetworkKind represents the type of the object used to configure this device.
+	NetworkInterfaceAttributePodNetwork NetworkInterfaceAttribute = NetworkInterfaceAttribute(multinetworkv1alpha1.StandardDeviceAttributePodNetwork)
+	// NetworkInterfaceAttributeNetworkKind represents the type of the object used to configure this device.
 	// The value will always be "DeviceNetwork".
 	// The value type of this attribute is string.
 	// This atttribute is always present for devices created from a DeviceNetwork.
-	NetworkInterfaceAttributesNetworkKind NetworkInterfaceAttribute = NetworkInterfaceAttribute(multinetworkv1alpha1.StandardDeviceAttributeNetworkKind)
+	NetworkInterfaceAttributeNetworkKind NetworkInterfaceAttribute = NetworkInterfaceAttribute(multinetworkv1alpha1.StandardDeviceAttributeNetworkKind)
 	// DeviceConfiguration represents the configuration name in the DeviceNetwork
 	// object used to configure this device.
 	// The value type of this attribute is string.
 	// This atttribute is always present for devices created from a DeviceNetwork.
-	NetworkInterfaceAttributesDeviceConfiguration NetworkInterfaceAttribute = NetworkInterfaceAttributesPrefix + "/" + "deviceConfiguration"
+	NetworkInterfaceAttributeDeviceConfiguration NetworkInterfaceAttribute = NetworkInterfaceAttributePrefix + "/" + "deviceConfiguration"
 
 	// Attributes with the prefix "hostDevice" represent the attributes of the host
 	// device used to create this network interface.
 
-	// NetworkInterfaceAttributesHostDeviceName represents the name of the host device used to create this network interface.
+	// NetworkInterfaceAttributeHostDeviceName represents the name of the host device used to create this network interface.
 	// The value type of this attribute is string.
 	// This atttribute is always present for devices created from a HostNetworkDevice.
-	NetworkInterfaceAttributesHostDeviceName NetworkInterfaceAttribute = NetworkInterfaceAttributesPrefix + "/" + "hostDeviceName"
+	NetworkInterfaceAttributeHostDeviceName NetworkInterfaceAttribute = NetworkInterfaceAttributePrefix + "/" + "hostDeviceName"
+
+	// NetworkInterfaceAttributeMaxVirtualInterfaces represents the maximum number of virtual interfaces that can be
+	// created based on a single host device.
+	// The value type of this attribute is int64.
+	// This capacity attribute is always present for virtual devices created from a HostNetworkDevice.
+	NetworkInterfaceCapacityMaxVirtualInterfaces NetworkInterfaceCapacity = NetworkInterfaceAttributePrefix + "/" + "maxVirtualInterfaces"
+
+	// MaxVirtualDevices is the maximum number of macvlan devices that can be created
+	// on a single parent device.
+	// This constant is used to set the value of the NetworkInterfaceCapacityMaxVirtualInterfaces attribute.
+	MaxVirtualDevices int64 = 65535
 )
 
 // DeviceSelectorAttribute represents the attributes of a network interface.

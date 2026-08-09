@@ -26,6 +26,8 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/lioneljouin/devicenetwork/apis/v1alpha1"
+	"github.com/lioneljouin/devicenetwork/pkg/configurators"
 	"github.com/lioneljouin/devicenetwork/pkg/resolver"
 	resourcev1 "k8s.io/api/resource/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -36,7 +38,6 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/dynamic-resource-allocation/kubeletplugin"
 	"k8s.io/dynamic-resource-allocation/resourceslice"
-	"k8s.io/dynamic-resource-allocation/structured"
 	"k8s.io/klog/v2"
 )
 
@@ -49,11 +50,12 @@ type PodResourceStore interface {
 
 // Driver represents a DRA Kubelet plugin.
 type Driver struct {
-	driverName       string
-	kubeClient       kubernetes.Interface
-	draPlugin        *kubeletplugin.Helper
-	podResourceStore PodResourceStore
-	deviceResolver   *resolver.Resolver
+	driverName          string
+	kubeClient          kubernetes.Interface
+	draPlugin           *kubeletplugin.Helper
+	podResourceStore    PodResourceStore
+	deviceResolver      *resolver.Resolver
+	deviceConfigurators map[v1alpha1.DeviceType]configurators.Configurator
 }
 
 // Start the DRA Kubelet plugin.
@@ -64,12 +66,14 @@ func Start(
 	kubeClient kubernetes.Interface,
 	podResourceStore PodResourceStore,
 	deviceResolver *resolver.Resolver,
+	deviceConfigurators map[v1alpha1.DeviceType]configurators.Configurator,
 ) (*Driver, error) {
 	driver := &Driver{
-		driverName:       driverName,
-		kubeClient:       kubeClient,
-		podResourceStore: podResourceStore,
-		deviceResolver:   deviceResolver,
+		driverName:          driverName,
+		kubeClient:          kubeClient,
+		podResourceStore:    podResourceStore,
+		deviceResolver:      deviceResolver,
+		deviceConfigurators: deviceConfigurators,
 	}
 
 	driverPluginPath := filepath.Join("/var/lib/kubelet/plugins/", driverName)
@@ -204,56 +208,79 @@ func (d *Driver) setStatus(
 		return nil, fmt.Errorf("failed to get devices for claim: %v", err)
 	}
 
-	resolvedDevicesMap := map[string]*resolver.Device{}
-	for _, resolvedDevice := range resolvedDevices {
-		structuredID := structured.MakeSharedDeviceID(
-			structured.MakeDeviceID(
-				resolvedDevice.DeviceRequestAllocationResult.Driver,
-				resolvedDevice.DeviceRequestAllocationResult.Pool,
-				resolvedDevice.DeviceRequestAllocationResult.Device,
-			), nil)
-
-		resolvedDevicesMap[structuredID.String()] = resolvedDevice
-	}
-
-	for _, statusDevice := range claim.Status.Devices {
-		structuredID := structured.MakeSharedDeviceID(
-			structured.MakeDeviceID(
-				statusDevice.Driver,
-				statusDevice.Pool,
-				statusDevice.Device,
-			), nil)
-
-		_, exists := resolvedDevicesMap[structuredID.String()]
-		if !exists {
-			continue
-		}
-
-		// Remove the device from the map if it exists in the claim status so
-		// that we don't add it again.
-		delete(resolvedDevicesMap, structuredID.String())
-	}
+	errors := []error{}
 
 	statusUpdates := &resourceapply.ResourceClaimStatusApplyConfiguration{Devices: []resourceapply.AllocatedDeviceStatusApplyConfiguration{}}
 
-	for _, device := range resolvedDevicesMap {
+	for _, resolvedDevice := range resolvedDevices {
+		if resolvedDevice.AllocatedDeviceStatus != nil {
+			continue
+		}
+
+		if resolvedDevice.DeviceConfiguration == nil { // Should not happen
+			klog.FromContext(ctx).Error(fmt.Errorf("device configuration is nil for resolved device, skipping"), "resolvedDevice", resolvedDevice)
+			continue
+		}
+
+		deviceType := v1alpha1.GetDeviceType(*resolvedDevice.DeviceConfiguration)
+
+		configurator, ok := d.deviceConfigurators[deviceType]
+		if !ok {
+			klog.FromContext(ctx).Error(fmt.Errorf("no configurator found for device type %s, skipping", deviceType), "resolvedDevice", resolvedDevice)
+			continue
+		}
+
+		if resolvedDevice.AllocatedDeviceStatus == nil {
+			resolvedDevice.AllocatedDeviceStatus = &resourcev1.AllocatedDeviceStatus{
+				Driver: resolvedDevice.DeviceRequestAllocationResult.Driver,
+				Pool:   resolvedDevice.DeviceRequestAllocationResult.Pool,
+				Device: resolvedDevice.DeviceRequestAllocationResult.Device,
+			}
+			if resolvedDevice.DeviceRequestAllocationResult.ShareID != nil {
+				resolvedDevice.AllocatedDeviceStatus.ShareID = (*string)(resolvedDevice.DeviceRequestAllocationResult.ShareID)
+			}
+		}
+
+		resolvedDevice.AllocatedDeviceStatus, err = configurator.Allocate(
+			ctx,
+			resolvedDevice.HostDevice,
+			resolvedDevice.DeviceConfiguration,
+			&resolvedDevice.DeviceNetwork.Spec.NetworkInterfaceConfiguration,
+			resolvedDevice.AllocatedDeviceStatus,
+		)
+		if err != nil {
+			errors = append(errors, fmt.Errorf("failed to allocate device %s: %v", resolvedDevice, err))
+			continue
+		}
 
 		resourceClaimStatusDevice := resourceapply.
 			AllocatedDeviceStatus().
-			WithDevice(device.DeviceRequestAllocationResult.Device).
-			WithDriver(device.DeviceRequestAllocationResult.Driver).
-			WithPool(device.DeviceRequestAllocationResult.Pool)
-		if device.DeviceRequestAllocationResult.ShareID != nil {
-			resourceClaimStatusDevice.WithShareID(string(*(device.DeviceRequestAllocationResult.ShareID)))
+			WithDevice(resolvedDevice.AllocatedDeviceStatus.Device).
+			WithDriver(resolvedDevice.AllocatedDeviceStatus.Driver).
+			WithPool(resolvedDevice.AllocatedDeviceStatus.Pool)
+		if resolvedDevice.AllocatedDeviceStatus.ShareID != nil {
+			resourceClaimStatusDevice.WithShareID(string(*(resolvedDevice.AllocatedDeviceStatus.ShareID)))
+		}
+		if resolvedDevice.AllocatedDeviceStatus.Data != nil {
+			resourceClaimStatusDevice.WithData(*resolvedDevice.AllocatedDeviceStatus.Data)
+		}
+		if resolvedDevice.AllocatedDeviceStatus.NetworkData != nil {
+			networkDeviceDataApplyConfiguration := resourceapply.NetworkDeviceData().
+				WithInterfaceName(resolvedDevice.AllocatedDeviceStatus.NetworkData.InterfaceName).
+				WithIPs(resolvedDevice.AllocatedDeviceStatus.NetworkData.IPs...).
+				WithHardwareAddress(resolvedDevice.AllocatedDeviceStatus.NetworkData.HardwareAddress)
+			resourceClaimStatusDevice.WithNetworkData(networkDeviceDataApplyConfiguration)
 		}
 
-		resourceClaimStatusDevice.WithConditions(
-			metav1apply.Condition().
-				WithType("Ready").
-				WithReason("Allocated").
-				WithStatus(metav1.ConditionTrue).
-				WithLastTransitionTime(metav1.Now()),
-		)
+		for _, condition := range resolvedDevice.AllocatedDeviceStatus.Conditions {
+			resourceClaimStatusDevice.WithConditions(
+				metav1apply.Condition().
+					WithType(condition.Type).
+					WithReason(condition.Reason).
+					WithStatus(condition.Status).
+					WithLastTransitionTime(condition.LastTransitionTime),
+			)
+		}
 
 		statusUpdates.WithDevices(resourceClaimStatusDevice)
 	}
@@ -265,6 +292,7 @@ func (d *Driver) setStatus(
 		metav1.ApplyOptions{FieldManager: d.driverName, Force: true},
 	)
 	if err != nil {
+		// todo: handel the error and rollback the allocation of the devices?
 		return nil, fmt.Errorf("failed to update resource claim status: %v", err)
 	}
 

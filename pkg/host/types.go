@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package device
+package host
 
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -41,7 +41,10 @@ type Device struct {
 // +k8s:deepcopy-gen=true
 type DeviceSpec struct {
 	// The name of the device on the host.
-	InterfaceName string `json:"interfaceNameDevice"`
+	InterfaceName string `json:"interfaceName"`
+
+	// The index of the device on the host.
+	InterfaceIndex int `json:"interfaceIndex"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object

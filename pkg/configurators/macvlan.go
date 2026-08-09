@@ -22,98 +22,167 @@ import (
 	"fmt"
 
 	"github.com/lioneljouin/devicenetwork/apis/v1alpha1"
-	"github.com/lioneljouin/devicenetwork/pkg/device"
-	"github.com/lioneljouin/devicenetwork/pkg/resolver"
+	"github.com/lioneljouin/devicenetwork/pkg/host"
 	"github.com/vishvananda/netlink"
 	"github.com/vishvananda/netns"
 	resourcev1 "k8s.io/api/resource/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/utils/ptr"
 )
 
-const (
-	capacity string = v1alpha1.NetworkInterfaceAttributesPrefix + "/" + "maxVirtualInterfaces"
-)
-
 type Macvlan struct {
+	CommonConfigurator *CommonConfigurator
 }
 
-// Configure creates a macvlan interface in the pod's network namespace
-// based on the provided device configuration and device attributes.
+// Allocate allocates the network device by gathering the necessary information
+// and storing it in the ResourceClaim Device Status.
+//
+// The necessary information includes the interface name, parent device name, IPs
+// and other relevant information to configure the network device.
 func (mcvln *Macvlan) Allocate(
 	ctx context.Context,
-	device *resolver.Device,
-) (*v1alpha1.ResourceClaimDeviceStatusData, error) {
-	resourceClaimDeviceStatusData := &v1alpha1.ResourceClaimDeviceStatusData{
-		Macvlan: &v1alpha1.MacvlanStatus{},
+	hostDevice *host.Device,
+	deviceConfiguration *v1alpha1.DeviceConfiguration,
+	networkInterfaceConfiguration *v1alpha1.NetworkInterfaceConfiguration,
+	allocatedDeviceStatus *resourcev1.AllocatedDeviceStatus,
+) (*resourcev1.AllocatedDeviceStatus, error) {
+	if allocatedDeviceStatus == nil {
+		return nil, fmt.Errorf("allocatedDeviceStatus is nil")
+	}
+	allocatedDeviceStatusRes := allocatedDeviceStatus.DeepCopy()
+
+	if deviceConfiguration == nil {
+		return nil, fmt.Errorf("deviceConfiguration is nil")
 	}
 
-	macvlanConfig := v1alpha1.GetMacvlan(*device.DeviceConfiguration)
-
-	hostDeviceName, ok := device.ExposedDevice.Attributes[resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributesHostDeviceName)]
-	if !ok || hostDeviceName.StringValue == nil {
-		return nil, fmt.Errorf("device %q does not have the %q attribute", device.ExposedDevice.Name, resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributesHostDeviceName))
+	if hostDevice == nil {
+		return nil, fmt.Errorf("hostDevice is nil")
 	}
 
-	resourceClaimDeviceStatusData.Macvlan.ParentName = *hostDeviceName.StringValue
+	// if network data is nil, initialize it with a new NetworkDeviceData and set the InterfaceName to a random name.
+	if allocatedDeviceStatusRes.NetworkData == nil {
+		allocatedDeviceStatusRes.NetworkData = &resourcev1.NetworkDeviceData{
+			InterfaceName: randomName(),
+		}
+	}
 
-	hostDevice, err := netlink.LinkByName(*hostDeviceName.StringValue)
+	resourceClaimDeviceStatusData := &v1alpha1.ResourceClaimDeviceStatusData{}
+	if allocatedDeviceStatusRes.Data != nil && allocatedDeviceStatusRes.Data.Raw != nil {
+		err := json.Unmarshal(allocatedDeviceStatusRes.Data.Raw, resourceClaimDeviceStatusData)
+		if err != nil {
+			return nil, fmt.Errorf("failed to unmarshal allocated device status data: %v", err)
+		}
+	}
+
+	macvlanConfig := v1alpha1.GetMacvlan(*deviceConfiguration)
+
+	macvlanModeMap := map[v1alpha1.MacvlanMode]netlink.MacvlanMode{
+		v1alpha1.MacvlanModeBridge:   netlink.MACVLAN_MODE_BRIDGE,
+		v1alpha1.MacvlanModePrivate:  netlink.MACVLAN_MODE_PRIVATE,
+		v1alpha1.MacvlanModeVepa:     netlink.MACVLAN_MODE_VEPA,
+		v1alpha1.MacvlanModePassthru: netlink.MACVLAN_MODE_PASSTHRU,
+		v1alpha1.MacvlanModeSource:   netlink.MACVLAN_MODE_SOURCE,
+	}
+
+	mode, ok := macvlanModeMap[*macvlanConfig.Mode]
+	if !ok {
+		return nil, fmt.Errorf("invalid macvlan mode %q", *macvlanConfig.Mode)
+	}
+
+	resourceClaimDeviceStatusData.Macvlan = &v1alpha1.MacvlanStatus{
+		ParentName:  hostDevice.Spec.InterfaceName,
+		ParentIndex: hostDevice.Spec.InterfaceIndex,
+		Mode:        int(mode),
+	}
+
+	resultBytes, err := json.Marshal(resourceClaimDeviceStatusData)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get link by name %q: %v", *hostDeviceName.StringValue, err)
-	}
-	resourceClaimDeviceStatusData.Macvlan.ParentIndex = hostDevice.Attrs().Index
-
-	switch *macvlanConfig.Mode {
-	case v1alpha1.MacvlanModeBridge:
-		resourceClaimDeviceStatusData.Macvlan.Mode = int(netlink.MACVLAN_MODE_BRIDGE)
-	case v1alpha1.MacvlanModePrivate:
-		resourceClaimDeviceStatusData.Macvlan.Mode = int(netlink.MACVLAN_MODE_PRIVATE)
-	case v1alpha1.MacvlanModeVepa:
-		resourceClaimDeviceStatusData.Macvlan.Mode = int(netlink.MACVLAN_MODE_VEPA)
-	case v1alpha1.MacvlanModePassthru:
-		resourceClaimDeviceStatusData.Macvlan.Mode = int(netlink.MACVLAN_MODE_PASSTHRU)
-	case v1alpha1.MacvlanModeSource:
-		resourceClaimDeviceStatusData.Macvlan.Mode = int(netlink.MACVLAN_MODE_SOURCE)
-	default:
-		return nil, fmt.Errorf("invalid macvlan mode %q", macvlanConfig.Mode)
+		return nil, fmt.Errorf("failed to json.Marshal result (%v): %v", resourceClaimDeviceStatusData, err)
 	}
 
-	return resourceClaimDeviceStatusData, nil
+	allocatedDeviceStatusRes.Data = &runtime.RawExtension{
+		Raw: resultBytes,
+	}
+
+	if mcvln.CommonConfigurator != nil {
+		allocatedDeviceStatusRes, err = mcvln.CommonConfigurator.Allocate(ctx, hostDevice, networkInterfaceConfiguration, allocatedDeviceStatusRes)
+		if err != nil {
+			return nil, fmt.Errorf("failed to allocate common network data: %v", err)
+		}
+	}
+
+	return allocatedDeviceStatusRes, nil
 }
 
-// Configure creates a macvlan interface in the pod's network namespace
-// based on the provided device configuration and device attributes.
+// ExposedDevice configures the device which will be exposed in ResourceSlice.
+func (mcvln *Macvlan) ExposedDevice(
+	ctx context.Context,
+	hostDevice *host.Device,
+	device *resourcev1.Device,
+) (*resourcev1.Device, error) {
+	deviceRes := &resourcev1.Device{}
+	if device != nil {
+		deviceRes = device.DeepCopy()
+	} else {
+		deviceRes = &resourcev1.Device{
+			Attributes: map[resourcev1.QualifiedName]resourcev1.DeviceAttribute{},
+			Capacity:   map[resourcev1.QualifiedName]resourcev1.DeviceCapacity{},
+		}
+	}
+
+	one := resource.MustParse("1")
+	maxVirtualDevices := resource.MustParse(fmt.Sprintf("%d", v1alpha1.MaxVirtualDevices))
+
+	deviceRes.AllowMultipleAllocations = ptr.To(true)
+	deviceRes.Capacity[resourcev1.QualifiedName(v1alpha1.NetworkInterfaceCapacityMaxVirtualInterfaces)] = resourcev1.DeviceCapacity{
+		Value: maxVirtualDevices,
+		RequestPolicy: &resourcev1.CapacityRequestPolicy{
+			Default:     &one,
+			ValidValues: []resource.Quantity{one},
+		},
+	}
+
+	return deviceRes, nil
+}
+
+// Configure configures the device.
+//
+// It must be called when the pod is getting created and after the ResourceClaim is allocated.
 func (mcvln *Macvlan) Configure(
 	ctx context.Context,
 	podNetworkNamespace string,
 	allocatedDeviceStatus *resourcev1.AllocatedDeviceStatus,
-) error {
+) (*resourcev1.AllocatedDeviceStatus, error) {
 	if allocatedDeviceStatus == nil {
-		return fmt.Errorf("allocated device status is nil")
+		return nil, fmt.Errorf("allocatedDeviceStatus is nil")
 	}
-
-	if allocatedDeviceStatus.NetworkData == nil {
-		return fmt.Errorf("allocated device status does not contain network data")
-	}
+	allocatedDeviceStatusRes := allocatedDeviceStatus.DeepCopy()
 
 	resourceClaimDeviceStatusData := &v1alpha1.ResourceClaimDeviceStatusData{}
 	err := json.Unmarshal(allocatedDeviceStatus.Data.Raw, resourceClaimDeviceStatusData)
 	if err != nil {
-		return fmt.Errorf("failed to unmarshal allocated device status data: %v", err)
+		return nil, fmt.Errorf("failed to unmarshal allocated device status data: %v", err)
 	}
 
 	if resourceClaimDeviceStatusData.Macvlan == nil {
-		return fmt.Errorf("allocated device status data does not contain macvlan information")
+		return nil, fmt.Errorf("allocated device status data does not contain macvlan information")
 	}
 
 	nsHandle, err := netns.GetFromPath(podNetworkNamespace)
 	if err != nil {
-		return fmt.Errorf("failed to get network namespace from path %q: %v", podNetworkNamespace, err)
+		return nil, fmt.Errorf("failed to get network namespace from path %q: %v", podNetworkNamespace, err)
 	}
 	defer nsHandle.Close()
 
+	// hwAddr, err := net.ParseMAC(allocatedDeviceStatus.NetworkData.HardwareAddress)
+	// if err != nil {
+	// 	return nil, fmt.Errorf("failed to parse hardware address %q: %v", allocatedDeviceStatus.NetworkData.HardwareAddress, err)
+	// }
+
 	linkAttrs := netlink.NewLinkAttrs()
 	linkAttrs.Name = allocatedDeviceStatus.NetworkData.InterfaceName
+	// linkAttrs.HardwareAddr = hwAddr
 	linkAttrs.ParentIndex = resourceClaimDeviceStatusData.Macvlan.ParentIndex
 	linkAttrs.Namespace = netlink.NsFd(nsHandle)
 	macvlan := netlink.Macvlan{
@@ -123,49 +192,19 @@ func (mcvln *Macvlan) Configure(
 
 	err = netlink.LinkAdd(&macvlan)
 	if err != nil {
-		return fmt.Errorf("failed to add macvlan link: %v", err)
+		return nil, fmt.Errorf("failed to add macvlan link: %v", err)
 	}
 
-	return nil
+	return allocatedDeviceStatusRes, nil
 }
 
-// ConfigureExposedDevice creates a device object representing the
-// macvlan interface to be exposed in resource slice.
-func (mcvln *Macvlan) ConfigureExposedDevice(
+// Release releases the device.
+//
+// It must be called when the Pod is getting deleted.
+func (mcvln *Macvlan) Release(
 	ctx context.Context,
-	deviceConfiguration v1alpha1.DeviceConfiguration,
-	device *device.Device,
-) *resourcev1.Device {
-	if !mcvln.applicableDevice(ctx, deviceConfiguration, device) {
-		return nil
-	}
-
-	one := resource.MustParse("1")
-	maxVirtualDevices := resource.MustParse("65535")
-
-	return &resourcev1.Device{
-		Attributes: map[resourcev1.QualifiedName]resourcev1.DeviceAttribute{},
-		Capacity: map[resourcev1.QualifiedName]resourcev1.DeviceCapacity{
-			resourcev1.QualifiedName(capacity): {
-				Value: maxVirtualDevices,
-				RequestPolicy: &resourcev1.CapacityRequestPolicy{
-					Default:     &one,
-					ValidValues: []resource.Quantity{one},
-				},
-			},
-		},
-		AllowMultipleAllocations: ptr.To(true),
-	}
-}
-
-func (mcvln *Macvlan) applicableDevice(
-	ctx context.Context,
-	deviceConfiguration v1alpha1.DeviceConfiguration,
-	device *device.Device,
-) bool {
-	if device == nil || v1alpha1.GetDeviceType(deviceConfiguration) != v1alpha1.DeviceTypeMacvlan {
-		return false
-	}
-
-	return true
+	podNetworkNamespace string,
+	allocatedDeviceStatus *resourcev1.AllocatedDeviceStatus,
+) (*resourcev1.AllocatedDeviceStatus, error) {
+	return allocatedDeviceStatus, nil
 }

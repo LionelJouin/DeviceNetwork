@@ -11,3 +11,8 @@ spec:
     deviceType: Macvlan
     deviceSelectors:
     - "all-interfaces"
+  networkInterfaceConfiguration:
+    ipam:
+    - provider: Random
+      random:
+        cidr: "192.168.1.0/24"

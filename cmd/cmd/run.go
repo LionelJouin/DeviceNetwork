@@ -27,8 +27,8 @@ import (
 	devicenetworkinformers "github.com/lioneljouin/devicenetwork/pkg/client/informers/externalversions"
 	"github.com/lioneljouin/devicenetwork/pkg/configurators"
 	"github.com/lioneljouin/devicenetwork/pkg/controllers/devicenetwork"
-	"github.com/lioneljouin/devicenetwork/pkg/device"
 	"github.com/lioneljouin/devicenetwork/pkg/driver"
+	"github.com/lioneljouin/devicenetwork/pkg/host"
 	"github.com/lioneljouin/devicenetwork/pkg/resolver"
 	"github.com/lioneljouin/devicenetwork/pkg/store"
 	"github.com/spf13/cobra"
@@ -82,7 +82,7 @@ func newCmdRun() *cobra.Command {
 	cmd.Flags().StringVar(
 		&runOpts.networkKind,
 		"network-kind",
-		"devicenetwork.io",
+		"devicenetwork-io-devicenetwork",
 		"Network kind.",
 	)
 
@@ -141,16 +141,29 @@ func (ro *runOptions) run(ctx context.Context) error {
 		).String()
 	}))
 
+	deviceCache, err := host.NewDeviceCache(30 * time.Second)
+	if err != nil {
+		return fmt.Errorf("failed to create device cache: %v", err)
+	}
+
 	resolver, err := resolver.NewResolver(
 		ro.networkKind,
 		resourceSliceInformerFactory.Resource().V1().ResourceSlices(),
 		deviceNetworkInformerFactory.Devicenetwork().V1alpha1().DeviceNetworks(),
+		deviceCache,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to create resolver: %v", err)
 	}
 
 	memoryStore := store.NewMemory()
+
+	macvlanConfigurator := &configurators.Macvlan{
+		CommonConfigurator: &configurators.CommonConfigurator{},
+	}
+	deviceConfigurators := map[v1alpha1.DeviceType]configurators.Configurator{
+		v1alpha1.DeviceTypeMacvlan: macvlanConfigurator,
+	}
 
 	draDriver, err := driver.Start(
 		ctx,
@@ -159,21 +172,12 @@ func (ro *runOptions) run(ctx context.Context) error {
 		kubeClient,
 		memoryStore,
 		resolver,
+		deviceConfigurators,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to dra.Start: %v", err)
 	}
 	defer draDriver.Stop()
-
-	deviceCache, err := device.NewDeviceCache(30 * time.Second)
-	if err != nil {
-		return fmt.Errorf("failed to create device cache: %v", err)
-	}
-
-	macvlanConfigurator := &configurators.Macvlan{}
-	deviceConfigurators := map[v1alpha1.DeviceType]devicenetwork.DeviceConfigurator{
-		v1alpha1.DeviceTypeMacvlan: macvlanConfigurator,
-	}
 
 	deviceNetworkController, err := devicenetwork.NewDeviceNetworkController(
 		ro.NodeName,

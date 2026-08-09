@@ -287,13 +287,26 @@ type IPAMProvider string
 
 const (
 	// IPAMProviderDHCP indicates that the IP address will be assigned via DHCP.
-	IPAMProviderDHCP IPAMProvider = "dhcp"
+	IPAMProviderDHCP IPAMProvider = "DHCP"
+	// IPAMProviderRandom indicates that the IP address will be assigned randomly,
+	// this provider is used for testing purposes and will be removed in the future.
+	IPAMProviderRandom IPAMProvider = "Random"
 )
 
 // IPAM represents the IP address management configuration for the created network interface.
 type IPAM struct {
 	// Provider represents the provider of IP address management for the created network interface.
 	Provider IPAMProvider `json:"provider,omitempty"`
+
+	// Random represents the configuration for the random IPAM provider.
+	// This field can be set only when Provider is "random".
+	// +optional
+	Random *RandomIPAM `json:"random,omitempty"`
+}
+
+type RandomIPAM struct {
+	// CIDR is the CIDR from which the random IP address will be assigned.
+	CIDR string `json:"cidr,omitempty"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
@@ -306,11 +319,22 @@ type DeviceNetworkList struct {
 	Items []DeviceNetwork `json:"items"`
 }
 
+// ResourceClaimDeviceStatusData represents the status data for a device in a ResourceClaim.
 type ResourceClaimDeviceStatusData struct {
+	// DeviceConfiguration is the name of the DeviceConfiguration
+	// which was used to configure the device.
+	DeviceConfiguration string `json:"deviceConfiguration,omitempty"`
+
+	// DeviceNetwork is the name of the DeviceNetwork
+	// which was used to configure the device.
+	DeviceNetwork string `json:"deviceNetwork,omitempty"`
+
+	// DeviceType defines how the selected network device
+	// will be configured in the Pod.
+	DeviceType *DeviceType `json:"deviceType,omitempty"`
+
 	// Macvlan is the configuration for Macvlan device type.
 	// This field can be set only when DeviceType is "Macvlan".
-	//
-	// +optional
 	Macvlan *MacvlanStatus `json:"macvlan,omitempty"`
 }
 
@@ -326,3 +350,25 @@ type MacvlanStatus struct {
 	// Mode is the mode of the created Macvlan interface.
 	Mode int `json:"mode,omitempty"`
 }
+
+// Well-known condition types for ResourceClaim Device Status.
+const (
+	// DeviceStatusConditionAllocation in the DeviceStatus condition indicates
+	// whether the device has been allocated to the ResourceClaim.
+	DeviceStatusConditionAllocation = "Allocation"
+)
+
+// Well-known condition reasons for ResourceClaim Device Status.
+const (
+	// DeviceStatusReasonAllocated in the Allocation condition indicates
+	// that the device has been allocated to the ResourceClaim and is ready to
+	// be configured in the Pod.
+	DeviceStatusReasonAllocated = "Allocated"
+	// DeviceStatusReasonError in the Allocation condition indicates
+	// that there was an error allocating the device to the ResourceClaim.
+	DeviceStatusReasonError = "Error"
+	// DeviceStatusReasonDeallocated in the Allocation condition indicates
+	// that the device has been deallocated from the ResourceClaim and is no longer
+	// available for use in the Pod.
+	DeviceStatusReasonDeallocated = "Deallocated"
+)
