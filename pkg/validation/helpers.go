@@ -32,8 +32,6 @@ const (
 	sizeCovered
 	// The uniqueness check is covered by declarative validation.
 	uniquenessCovered
-	// key validation is covered by declarative validation.
-	keysCovered
 )
 
 // validateItems validates each item in a slice.

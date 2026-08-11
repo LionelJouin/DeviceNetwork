@@ -166,6 +166,10 @@ func (r *Resolver) getDeviceNetworkForDevice(
 		}
 	}
 
+	if device == nil { // should never happen as we indexed by deviceID
+		return nil, nil, nil, nil, nil, fmt.Errorf("device %s not found in resource slice %s", deviceRequestAllocationResult.Device, slice.Name)
+	}
+
 	podNetwork, ok := device.Attributes[resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributePodNetwork)]
 	if !ok || podNetwork.StringValue == nil {
 		return nil, nil, nil, nil, nil, fmt.Errorf("device %s does not have pod network attribute", device.Name)

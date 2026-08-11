@@ -44,20 +44,6 @@ func EvalDevices(ctx context.Context, expression string, devices []*Device) ([]*
 	return filteredDevices, nil
 }
 
-func EvalDevice(ctx context.Context, expression string, device *Device) (bool, error) {
-	program, err := celProgram(expression)
-	if err != nil {
-		return false, fmt.Errorf("error creating CEL program: %w", err)
-	}
-
-	match, err := eval(ctx, program, device)
-	if err != nil {
-		return false, fmt.Errorf("error evaluating CEL program: %w", err)
-	}
-
-	return match, nil
-}
-
 func celProgram(expression string) (cel.Program, error) {
 	env, err := cel.NewEnv(
 		cel.Variable(string(v1alpha1.InterfaceNameDeviceSelectorAttribute), cel.StringType),

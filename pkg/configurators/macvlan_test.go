@@ -193,8 +193,14 @@ func TestMacvlan_Configure(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to get current netns: %v", err)
 	}
-	defer origNS.Close()
-	defer netns.Set(origNS)
+	t.Cleanup(func() {
+		if err := netns.Set(origNS); err != nil {
+			t.Errorf("failed to restore netns: %v", err)
+		}
+		if err := origNS.Close(); err != nil {
+			t.Errorf("failed to close original netns: %v", err)
+		}
+	})
 
 	// Create an isolated "host" namespace so the dummy parent never touches the real host.
 	// netns.New() creates an unnamed namespace (fd-only, no /var/run/netns/ entry),
@@ -203,7 +209,11 @@ func TestMacvlan_Configure(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create host netns: %v", err)
 	}
-	defer hostNS.Close()
+	t.Cleanup(func() {
+		if err := hostNS.Close(); err != nil {
+			t.Errorf("failed to close host netns: %v", err)
+		}
+	})
 
 	dummy := &netlink.Dummy{LinkAttrs: netlink.LinkAttrs{Name: "dummy0"}}
 	if err := netlink.LinkAdd(dummy); err != nil {
@@ -216,14 +226,22 @@ func TestMacvlan_Configure(t *testing.T) {
 	}
 	parentIndex := parentLink.Attrs().Index
 
-	// Create a named "pod" namespace.
 	const nsName = "test-configure"
+	if err := netns.DeleteNamed(nsName); err != nil {
+		t.Logf("cleanup of previous netns %q: %v (may not exist)", nsName, err)
+	}
 	podNS, err := netns.NewNamed(nsName)
 	if err != nil {
 		t.Fatalf("failed to create named netns: %v", err)
 	}
-	defer netns.DeleteNamed(nsName)
-	defer podNS.Close()
+	t.Cleanup(func() {
+		if err := podNS.Close(); err != nil {
+			t.Errorf("failed to close pod netns: %v", err)
+		}
+		if err := netns.DeleteNamed(nsName); err != nil {
+			t.Errorf("failed to delete named netns %q: %v", nsName, err)
+		}
+	})
 
 	// netns.NewNamed switches to the new ns; switch back to the host ns
 	// (where the parent interface lives and where Configure will run).
@@ -287,6 +305,12 @@ func TestMacvlan_Configure(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			runtime.LockOSThread()
+			defer runtime.UnlockOSThread()
+			if err := netns.Set(hostNS); err != nil {
+				t.Fatalf("failed to set netns: %v", err)
+			}
+
 			var mcvln configurators.Macvlan
 			got, gotErr := mcvln.Configure(t.Context(), tt.podNetworkNamespace, tt.allocatedDeviceStatus)
 			if gotErr != nil {

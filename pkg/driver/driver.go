@@ -21,6 +21,7 @@ package driver
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -48,13 +49,18 @@ type PodResourceStore interface {
 	Add(podUID types.UID, allocation *resourcev1.ResourceClaim)
 }
 
+// deviceResolver is an interface to resolve devices for a given ResourceClaim.
+type deviceResolver interface {
+	GetDevices(driverName string, claim *resourcev1.ResourceClaim) ([]*resolver.Device, error)
+}
+
 // Driver represents a DRA Kubelet plugin.
 type Driver struct {
 	driverName          string
 	kubeClient          kubernetes.Interface
 	draPlugin           *kubeletplugin.Helper
 	podResourceStore    PodResourceStore
-	deviceResolver      *resolver.Resolver
+	deviceResolver      deviceResolver
 	deviceConfigurators map[v1alpha1.DeviceType]configurators.Configurator
 }
 
@@ -65,7 +71,7 @@ func Start(
 	nodeName string,
 	kubeClient kubernetes.Interface,
 	podResourceStore PodResourceStore,
-	deviceResolver *resolver.Resolver,
+	deviceResolver deviceResolver,
 	deviceConfigurators map[v1alpha1.DeviceType]configurators.Configurator,
 ) (*Driver, error) {
 	driver := &Driver{
@@ -167,7 +173,7 @@ func (d *Driver) nodePrepareResource(ctx context.Context, claim *resourcev1.Reso
 		return nil, fmt.Errorf("expected exactly one reservation for claim, got %d", len(claim.Status.ReservedFor))
 	}
 
-	updatedResourceClaim, err := d.setStatus(ctx, claim)
+	updatedResourceClaim, err := d.allocateDevices(ctx, claim)
 	if err != nil {
 		return nil, fmt.Errorf("failed to set status for claim %s/%s: %v", claim.Namespace, claim.Name, err)
 	}
@@ -185,6 +191,7 @@ func (d *Driver) nodePrepareResource(ctx context.Context, claim *resourcev1.Reso
 			Requests:   []string{result.Request},
 			PoolName:   result.Pool,
 			DeviceName: result.Device,
+			// todo: metadata
 		}
 		devices = append(devices, device)
 	}
@@ -199,16 +206,16 @@ func (d *Driver) nodeUnprepareResource(_ context.Context, _ string) error {
 	return nil
 }
 
-func (d *Driver) setStatus(
+func (d *Driver) allocateDevices(
 	ctx context.Context,
 	claim *resourcev1.ResourceClaim,
 ) (*resourcev1.ResourceClaim, error) {
-	resolvedDevices, err := d.deviceResolver.GetDevices(d.driverName, claim)
+	resolvedDevices, err := d.deviceResolver.GetDevices(d.driverName, claim) // todo: per device, not per claim
 	if err != nil {
 		return nil, fmt.Errorf("failed to get devices for claim: %v", err)
 	}
 
-	errors := []error{}
+	var errs []error
 
 	statusUpdates := &resourceapply.ResourceClaimStatusApplyConfiguration{Devices: []resourceapply.AllocatedDeviceStatusApplyConfiguration{}}
 
@@ -249,7 +256,7 @@ func (d *Driver) setStatus(
 			resolvedDevice.AllocatedDeviceStatus,
 		)
 		if err != nil {
-			errors = append(errors, fmt.Errorf("failed to allocate device %s: %v", resolvedDevice, err))
+			errs = append(errs, fmt.Errorf("failed to allocate device %v: %v", resolvedDevice, err))
 			continue
 		}
 
@@ -283,6 +290,10 @@ func (d *Driver) setStatus(
 		}
 
 		statusUpdates.WithDevices(resourceClaimStatusDevice)
+	}
+
+	if len(errs) > 0 {
+		return nil, fmt.Errorf("failed to allocate devices: %w", errors.Join(errs...))
 	}
 
 	resourceClaimApply := resourceapply.ResourceClaim(claim.GetName(), claim.GetNamespace()).WithStatus(statusUpdates)

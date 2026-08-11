@@ -172,5 +172,6 @@ func (dnr *DeviceNetworkReconciler) getResources(
 }
 
 func DeviceName(deviceNetworkName string, deviceConfigurationName string, deviceName string) string {
+	// todo: DeviceName("a-b", "c", "d")  collides with DeviceName("a", "b-c", "d") and deviceName can contain unallowed characters,
 	return fmt.Sprintf("%s-%s-%s", deviceNetworkName, deviceConfigurationName, deviceName)
 }

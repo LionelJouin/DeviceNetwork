@@ -28,6 +28,7 @@ import (
 	resourcev1 "k8s.io/api/resource/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/klog/v2"
 	"k8s.io/utils/ptr"
 )
 
@@ -173,7 +174,11 @@ func (mcvln *Macvlan) Configure(
 	if err != nil {
 		return nil, fmt.Errorf("failed to get network namespace from path %q: %v", podNetworkNamespace, err)
 	}
-	defer nsHandle.Close()
+	defer func() {
+		if err := nsHandle.Close(); err != nil {
+			klog.FromContext(ctx).Error(err, "failed to close network namespace handle")
+		}
+	}()
 
 	// hwAddr, err := net.ParseMAC(allocatedDeviceStatus.NetworkData.HardwareAddress)
 	// if err != nil {

@@ -206,7 +206,6 @@ func (dc *DeviceCache) List(ctx context.Context, opts ...Option) []*Device {
 		opt(options)
 	}
 
-	fullList := sets.Set[*Device]{}
 	result := sets.Set[*Device]{}
 
 	for _, obj := range dc.informer.GetStore().List() {
@@ -215,7 +214,7 @@ func (dc *DeviceCache) List(ctx context.Context, opts ...Option) []*Device {
 			continue
 		}
 
-		fullList.Insert(device)
+		result.Insert(device)
 	}
 
 	for _, selector := range options.selectors {
@@ -223,18 +222,13 @@ func (dc *DeviceCache) List(ctx context.Context, opts ...Option) []*Device {
 			continue
 		}
 
-		evalDevices, err := EvalDevices(ctx, selector.CEL.Expression, fullList.UnsortedList())
+		evalDevices, err := EvalDevices(ctx, selector.CEL.Expression, result.UnsortedList())
 		if err != nil {
 			klog.FromContext(ctx).Error(err, "Failed to evaluate device filter expression", "selector", selector.CEL.Expression)
 			continue
 		}
 
-		result.Insert(evalDevices...)
-		fullList = fullList.Difference(result)
-	}
-
-	if len(options.selectors) == 0 {
-		result = fullList
+		result = sets.New(evalDevices...)
 	}
 
 	return result.UnsortedList()
@@ -260,7 +254,9 @@ func (dc *DeviceCache) syncDevice(deviceKey string) error {
 			if err := dc.informer.GetStore().Delete(existing); err != nil {
 				return fmt.Errorf("failed to delete device %s from store: %v", deviceKey, err)
 			}
-			dc.watcher.Action(watch.Deleted, existing)
+			if err := dc.watcher.Action(watch.Deleted, existing); err != nil {
+				return fmt.Errorf("failed to broadcast delete for device %s: %v", deviceKey, err)
+			}
 		}
 
 		return nil
@@ -280,7 +276,9 @@ func (dc *DeviceCache) syncDevice(deviceKey string) error {
 		if err := dc.informer.GetStore().Update(newEntry); err != nil {
 			return fmt.Errorf("failed to update device %s in store: %v", deviceKey, err)
 		}
-		dc.watcher.Action(watch.Modified, newEntry)
+		if err := dc.watcher.Action(watch.Modified, newEntry); err != nil {
+			return fmt.Errorf("failed to broadcast update for device %s: %v", deviceKey, err)
+		}
 
 		return nil
 	}
@@ -288,7 +286,9 @@ func (dc *DeviceCache) syncDevice(deviceKey string) error {
 	if err := dc.informer.GetStore().Add(newEntry); err != nil {
 		return fmt.Errorf("failed to add device %s to store: %v", deviceKey, err)
 	}
-	dc.watcher.Action(watch.Added, newEntry)
+	if err := dc.watcher.Action(watch.Added, newEntry); err != nil {
+		return fmt.Errorf("failed to broadcast add for device %s: %v", deviceKey, err)
+	}
 
 	return nil
 }

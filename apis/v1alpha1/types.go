@@ -46,8 +46,18 @@ type DeviceNetwork struct {
 }
 
 const (
-	DeviceSelectorMaxSize      = 4
+	// DeviceSelectorMaxSize is the maximum number of DeviceSelectors in a DeviceNetwork.
+	// This limit could be increased in the future based on the actual needs.
+	DeviceSelectorMaxSize = 4
+	// DeviceConfigurationMaxSize is the maximum number of DeviceConfigurations in a DeviceNetwork.
+	// This limit could be increased in the future based on the actual needs.
 	DeviceConfigurationMaxSize = 4
+	// SelectorPerDeviceConfigurationMaxSize is the maximum number of DeviceSelectors that can be referenced by a DeviceConfiguration.
+	// This limit could be increased in the future based on the actual needs.
+	SelectorPerDeviceConfigurationMaxSize = DeviceSelectorMaxSize
+	// SelectorPerDeviceSelectorMaxSize is the maximum number of Selectors that can be specified in a DeviceSelector.
+	// This limit could be increased in the future based on the actual needs.
+	SelectorPerDeviceSelectorMaxSize = 1
 )
 
 // DeviceNetworkSpec is the spec for a DeviceNetwork resource.

@@ -33,6 +33,7 @@ import (
 	kubeinformers "k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/tools/cache"
+	"k8s.io/utils/ptr"
 )
 
 func newResolver(
@@ -84,19 +85,19 @@ func newResolver(
 	return r
 }
 
-func strPtr(s string) *string { return &s }
-
 func TestGetDevices(t *testing.T) {
-	deviceAttrs := map[resourcev1.QualifiedName]resourcev1.DeviceAttribute{
-		resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributePodNetwork):          {StringValue: strPtr("test-dn")},
-		resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributeNetworkKind):         {StringValue: strPtr("DeviceNetwork")},
-		resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributeDeviceConfiguration): {StringValue: strPtr("config-0")},
-		resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributeHostDeviceName):      {StringValue: strPtr("eth0")},
+	makeAttrs := func(podNetwork, networkKind, deviceConfig, hostDeviceName string) map[resourcev1.QualifiedName]resourcev1.DeviceAttribute {
+		return map[resourcev1.QualifiedName]resourcev1.DeviceAttribute{
+			resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributePodNetwork):          {StringValue: ptr.To(podNetwork)},
+			resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributeNetworkKind):         {StringValue: ptr.To(networkKind)},
+			resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributeDeviceConfiguration): {StringValue: ptr.To(deviceConfig)},
+			resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributeHostDeviceName):      {StringValue: ptr.To(hostDeviceName)},
+		}
 	}
 
 	exposedDevice := resourcev1.Device{
 		Name:       "dev-0",
-		Attributes: deviceAttrs,
+		Attributes: makeAttrs("test-dn", "DeviceNetwork", "config-0", "eth0"),
 	}
 
 	deviceNetwork := &v1alpha1.DeviceNetwork{
@@ -183,7 +184,7 @@ func TestGetDevices(t *testing.T) {
 			want: nil,
 		},
 		{
-			name:        "device not found in any resource slice",
+			name:        "device not found in any resource slice returns error",
 			networkKind: "DeviceNetwork",
 			driverName:  "test-driver",
 			claim: &resourcev1.ResourceClaim{
@@ -198,7 +199,7 @@ func TestGetDevices(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name:        "missing pod network attribute",
+			name:        "missing pod network attribute returns error",
 			networkKind: "DeviceNetwork",
 			driverName:  "test-driver",
 			initialResourceSlices: []runtime.Object{
@@ -211,9 +212,9 @@ func TestGetDevices(t *testing.T) {
 							{
 								Name: "dev-0",
 								Attributes: map[resourcev1.QualifiedName]resourcev1.DeviceAttribute{
-									resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributeNetworkKind):         {StringValue: strPtr("DeviceNetwork")},
-									resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributeDeviceConfiguration): {StringValue: strPtr("config-0")},
-									resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributeHostDeviceName):      {StringValue: strPtr("eth0")},
+									resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributeNetworkKind):         {StringValue: ptr.To("DeviceNetwork")},
+									resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributeDeviceConfiguration): {StringValue: ptr.To("config-0")},
+									resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributeHostDeviceName):      {StringValue: ptr.To("eth0")},
 								},
 							},
 						},
@@ -232,7 +233,7 @@ func TestGetDevices(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name:        "wrong network kind",
+			name:        "wrong network kind returns error",
 			networkKind: "DeviceNetwork",
 			driverName:  "test-driver",
 			initialResourceSlices: []runtime.Object{
@@ -245,10 +246,10 @@ func TestGetDevices(t *testing.T) {
 							{
 								Name: "dev-0",
 								Attributes: map[resourcev1.QualifiedName]resourcev1.DeviceAttribute{
-									resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributePodNetwork):          {StringValue: strPtr("test-dn")},
-									resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributeNetworkKind):         {StringValue: strPtr("WrongKind")},
-									resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributeDeviceConfiguration): {StringValue: strPtr("config-0")},
-									resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributeHostDeviceName):      {StringValue: strPtr("eth0")},
+									resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributePodNetwork):          {StringValue: ptr.To("test-dn")},
+									resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributeNetworkKind):         {StringValue: ptr.To("WrongKind")},
+									resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributeDeviceConfiguration): {StringValue: ptr.To("config-0")},
+									resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributeHostDeviceName):      {StringValue: ptr.To("eth0")},
 								},
 							},
 						},
@@ -267,7 +268,7 @@ func TestGetDevices(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name:        "missing device configuration attribute",
+			name:        "missing device configuration attribute returns error",
 			networkKind: "DeviceNetwork",
 			driverName:  "test-driver",
 			initialResourceSlices: []runtime.Object{
@@ -280,9 +281,9 @@ func TestGetDevices(t *testing.T) {
 							{
 								Name: "dev-0",
 								Attributes: map[resourcev1.QualifiedName]resourcev1.DeviceAttribute{
-									resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributePodNetwork):     {StringValue: strPtr("test-dn")},
-									resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributeNetworkKind):    {StringValue: strPtr("DeviceNetwork")},
-									resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributeHostDeviceName): {StringValue: strPtr("eth0")},
+									resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributePodNetwork):     {StringValue: ptr.To("test-dn")},
+									resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributeNetworkKind):    {StringValue: ptr.To("DeviceNetwork")},
+									resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributeHostDeviceName): {StringValue: ptr.To("eth0")},
 								},
 							},
 						},
@@ -301,7 +302,7 @@ func TestGetDevices(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name:        "missing host device name attribute",
+			name:        "missing host device name attribute returns error",
 			networkKind: "DeviceNetwork",
 			driverName:  "test-driver",
 			initialResourceSlices: []runtime.Object{
@@ -314,9 +315,9 @@ func TestGetDevices(t *testing.T) {
 							{
 								Name: "dev-0",
 								Attributes: map[resourcev1.QualifiedName]resourcev1.DeviceAttribute{
-									resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributePodNetwork):          {StringValue: strPtr("test-dn")},
-									resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributeNetworkKind):         {StringValue: strPtr("DeviceNetwork")},
-									resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributeDeviceConfiguration): {StringValue: strPtr("config-0")},
+									resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributePodNetwork):          {StringValue: ptr.To("test-dn")},
+									resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributeNetworkKind):         {StringValue: ptr.To("DeviceNetwork")},
+									resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributeDeviceConfiguration): {StringValue: ptr.To("config-0")},
 								},
 							},
 						},
@@ -335,7 +336,7 @@ func TestGetDevices(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name:        "host device not in cache",
+			name:        "host device not in cache returns error",
 			networkKind: "DeviceNetwork",
 			driverName:  "test-driver",
 			initialResourceSlices: []runtime.Object{
@@ -361,7 +362,7 @@ func TestGetDevices(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name:        "device network not found",
+			name:        "device network not found returns error",
 			networkKind: "DeviceNetwork",
 			driverName:  "test-driver",
 			initialResourceSlices: []runtime.Object{
@@ -387,7 +388,192 @@ func TestGetDevices(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name:        "device configuration not found in device network",
+			name:        "multiple devices resolved from same slice",
+			networkKind: "DeviceNetwork",
+			driverName:  "test-driver",
+			initialResourceSlices: []runtime.Object{
+				&resourcev1.ResourceSlice{
+					ObjectMeta: metav1.ObjectMeta{Name: "slice-0"},
+					Spec: resourcev1.ResourceSliceSpec{
+						Driver: "test-driver",
+						Pool:   resourcev1.ResourcePool{Name: "test-pool"},
+						Devices: []resourcev1.Device{
+							{Name: "dev-0", Attributes: makeAttrs("test-dn", "DeviceNetwork", "config-0", "eth0")},
+							{Name: "dev-1", Attributes: makeAttrs("test-dn", "DeviceNetwork", "config-0", "eth1")},
+						},
+					},
+				},
+			},
+			initialDeviceNetworks: []runtime.Object{deviceNetwork},
+			initialDeviceObjects: []runtime.Object{
+				hostDevice,
+				&host.Device{ObjectMeta: metav1.ObjectMeta{Name: "eth1"}, Spec: host.DeviceSpec{InterfaceName: "eth1"}},
+			},
+			claim: &resourcev1.ResourceClaim{
+				Status: resourcev1.ResourceClaimStatus{
+					Allocation: &resourcev1.AllocationResult{
+						Devices: resourcev1.DeviceAllocationResult{
+							Results: []resourcev1.DeviceRequestAllocationResult{
+								{Driver: "test-driver", Pool: "test-pool", Device: "dev-0"},
+								{Driver: "test-driver", Pool: "test-pool", Device: "dev-1"},
+							},
+						},
+					},
+				},
+			},
+			want: []*resolver.Device{
+				{
+					DeviceRequestAllocationResult: &resourcev1.DeviceRequestAllocationResult{Driver: "test-driver", Pool: "test-pool", Device: "dev-0"},
+					DeviceNetwork:                 deviceNetwork,
+					DeviceConfiguration:           &deviceNetwork.Spec.DeviceConfigurations[0],
+					ExposedDevice:                 &resourcev1.Device{Name: "dev-0", Attributes: makeAttrs("test-dn", "DeviceNetwork", "config-0", "eth0")},
+					HostDevice:                    hostDevice,
+				},
+				{
+					DeviceRequestAllocationResult: &resourcev1.DeviceRequestAllocationResult{Driver: "test-driver", Pool: "test-pool", Device: "dev-1"},
+					DeviceNetwork:                 deviceNetwork,
+					DeviceConfiguration:           &deviceNetwork.Spec.DeviceConfigurations[0],
+					ExposedDevice:                 &resourcev1.Device{Name: "dev-1", Attributes: makeAttrs("test-dn", "DeviceNetwork", "config-0", "eth1")},
+					HostDevice:                    &host.Device{ObjectMeta: metav1.ObjectMeta{Name: "eth1"}, Spec: host.DeviceSpec{InterfaceName: "eth1"}},
+				},
+			},
+		},
+		{
+			name:        "non-network device returns error",
+			networkKind: "DeviceNetwork",
+			driverName:  "test-driver",
+			initialResourceSlices: []runtime.Object{
+				&resourcev1.ResourceSlice{
+					ObjectMeta: metav1.ObjectMeta{Name: "slice-0"},
+					Spec: resourcev1.ResourceSliceSpec{
+						Driver: "test-driver",
+						Pool:   resourcev1.ResourcePool{Name: "test-pool"},
+						Devices: []resourcev1.Device{
+							{Name: "dev-0", Attributes: makeAttrs("test-dn", "DeviceNetwork", "config-0", "eth0")},
+							{Name: "dev-gpu", Attributes: map[resourcev1.QualifiedName]resourcev1.DeviceAttribute{
+								"gpu.vendor": {StringValue: ptr.To("nvidia")},
+							}},
+						},
+					},
+				},
+			},
+			initialDeviceNetworks: []runtime.Object{deviceNetwork},
+			initialDeviceObjects:  []runtime.Object{hostDevice},
+			claim: &resourcev1.ResourceClaim{
+				Status: resourcev1.ResourceClaimStatus{
+					Allocation: &resourcev1.AllocationResult{
+						Devices: resourcev1.DeviceAllocationResult{
+							Results: []resourcev1.DeviceRequestAllocationResult{
+								{Driver: "test-driver", Pool: "test-pool", Device: "dev-0"},
+								{Driver: "test-driver", Pool: "test-pool", Device: "dev-gpu"},
+							},
+						},
+					},
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name:        "device with allocated device status",
+			networkKind: "DeviceNetwork",
+			driverName:  "test-driver",
+			initialResourceSlices: []runtime.Object{
+				&resourcev1.ResourceSlice{
+					ObjectMeta: metav1.ObjectMeta{Name: "slice-0"},
+					Spec: resourcev1.ResourceSliceSpec{
+						Driver:  "test-driver",
+						Pool:    resourcev1.ResourcePool{Name: "test-pool"},
+						Devices: []resourcev1.Device{exposedDevice},
+					},
+				},
+			},
+			initialDeviceNetworks: []runtime.Object{deviceNetwork},
+			initialDeviceObjects:  []runtime.Object{hostDevice},
+			claim: &resourcev1.ResourceClaim{
+				Status: resourcev1.ResourceClaimStatus{
+					Allocation: &resourcev1.AllocationResult{
+						Devices: resourcev1.DeviceAllocationResult{
+							Results: []resourcev1.DeviceRequestAllocationResult{{Driver: "test-driver", Pool: "test-pool", Device: "dev-0"}},
+						},
+					},
+					Devices: []resourcev1.AllocatedDeviceStatus{
+						{Driver: "test-driver", Pool: "test-pool", Device: "dev-0", Conditions: []metav1.Condition{{Type: "Ready", Status: metav1.ConditionTrue}}},
+					},
+				},
+			},
+			want: []*resolver.Device{
+				{
+					DeviceRequestAllocationResult: &resourcev1.DeviceRequestAllocationResult{Driver: "test-driver", Pool: "test-pool", Device: "dev-0"},
+					AllocatedDeviceStatus:         &resourcev1.AllocatedDeviceStatus{Driver: "test-driver", Pool: "test-pool", Device: "dev-0", Conditions: []metav1.Condition{{Type: "Ready", Status: metav1.ConditionTrue}}},
+					DeviceNetwork:                 deviceNetwork,
+					DeviceConfiguration:           &deviceNetwork.Spec.DeviceConfigurations[0],
+					ExposedDevice:                 &exposedDevice,
+					HostDevice:                    hostDevice,
+				},
+			},
+		},
+		{
+			name:        "devices from different device networks",
+			networkKind: "DeviceNetwork",
+			driverName:  "test-driver",
+			initialResourceSlices: []runtime.Object{
+				&resourcev1.ResourceSlice{
+					ObjectMeta: metav1.ObjectMeta{Name: "slice-0"},
+					Spec: resourcev1.ResourceSliceSpec{
+						Driver: "test-driver",
+						Pool:   resourcev1.ResourcePool{Name: "test-pool"},
+						Devices: []resourcev1.Device{
+							{Name: "dev-0", Attributes: makeAttrs("dn-a", "DeviceNetwork", "cfg-a", "eth0")},
+							{Name: "dev-1", Attributes: makeAttrs("dn-b", "DeviceNetwork", "cfg-b", "eth1")},
+						},
+					},
+				},
+			},
+			initialDeviceNetworks: []runtime.Object{
+				&v1alpha1.DeviceNetwork{
+					ObjectMeta: metav1.ObjectMeta{Name: "dn-a"},
+					Spec:       v1alpha1.DeviceNetworkSpec{DeviceConfigurations: []v1alpha1.DeviceConfiguration{{Name: "cfg-a"}}},
+				},
+				&v1alpha1.DeviceNetwork{
+					ObjectMeta: metav1.ObjectMeta{Name: "dn-b"},
+					Spec:       v1alpha1.DeviceNetworkSpec{DeviceConfigurations: []v1alpha1.DeviceConfiguration{{Name: "cfg-b"}}},
+				},
+			},
+			initialDeviceObjects: []runtime.Object{
+				hostDevice,
+				&host.Device{ObjectMeta: metav1.ObjectMeta{Name: "eth1"}, Spec: host.DeviceSpec{InterfaceName: "eth1"}},
+			},
+			claim: &resourcev1.ResourceClaim{
+				Status: resourcev1.ResourceClaimStatus{
+					Allocation: &resourcev1.AllocationResult{
+						Devices: resourcev1.DeviceAllocationResult{
+							Results: []resourcev1.DeviceRequestAllocationResult{
+								{Driver: "test-driver", Pool: "test-pool", Device: "dev-0"},
+								{Driver: "test-driver", Pool: "test-pool", Device: "dev-1"},
+							},
+						},
+					},
+				},
+			},
+			want: []*resolver.Device{
+				{
+					DeviceRequestAllocationResult: &resourcev1.DeviceRequestAllocationResult{Driver: "test-driver", Pool: "test-pool", Device: "dev-0"},
+					DeviceNetwork:                 &v1alpha1.DeviceNetwork{ObjectMeta: metav1.ObjectMeta{Name: "dn-a"}, Spec: v1alpha1.DeviceNetworkSpec{DeviceConfigurations: []v1alpha1.DeviceConfiguration{{Name: "cfg-a"}}}},
+					DeviceConfiguration:           &v1alpha1.DeviceConfiguration{Name: "cfg-a"},
+					ExposedDevice:                 &resourcev1.Device{Name: "dev-0", Attributes: makeAttrs("dn-a", "DeviceNetwork", "cfg-a", "eth0")},
+					HostDevice:                    hostDevice,
+				},
+				{
+					DeviceRequestAllocationResult: &resourcev1.DeviceRequestAllocationResult{Driver: "test-driver", Pool: "test-pool", Device: "dev-1"},
+					DeviceNetwork:                 &v1alpha1.DeviceNetwork{ObjectMeta: metav1.ObjectMeta{Name: "dn-b"}, Spec: v1alpha1.DeviceNetworkSpec{DeviceConfigurations: []v1alpha1.DeviceConfiguration{{Name: "cfg-b"}}}},
+					DeviceConfiguration:           &v1alpha1.DeviceConfiguration{Name: "cfg-b"},
+					ExposedDevice:                 &resourcev1.Device{Name: "dev-1", Attributes: makeAttrs("dn-b", "DeviceNetwork", "cfg-b", "eth1")},
+					HostDevice:                    &host.Device{ObjectMeta: metav1.ObjectMeta{Name: "eth1"}, Spec: host.DeviceSpec{InterfaceName: "eth1"}},
+				},
+			},
+		},
+		{
+			name:        "device configuration not found in device network returns error",
 			networkKind: "DeviceNetwork",
 			driverName:  "test-driver",
 			initialResourceSlices: []runtime.Object{

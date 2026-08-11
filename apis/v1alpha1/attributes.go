@@ -34,22 +34,22 @@ const (
 	// This is determined by the deviceType field in the DeviceConfiguration.
 	// e.g. HostDevice, Macvlan...
 	// The value type of this attribute is string.
-	// This atttribute is always present for devices created from a DeviceNetwork.
+	// This attribute is always present for devices created from a DeviceNetwork.
 	NetworkInterfaceAttributeDeviceType NetworkInterfaceAttribute = NetworkInterfaceAttributePrefix + "/" + "deviceType"
 	// NetworkInterfaceAttributePodNetwork represents the name of the DeviceNetwork object used to configure this
 	// device.
 	// The value type of this attribute is string.
-	// This atttribute is always present for devices created from a DeviceNetwork.
+	// This attribute is always present for devices created from a DeviceNetwork.
 	NetworkInterfaceAttributePodNetwork NetworkInterfaceAttribute = NetworkInterfaceAttribute(multinetworkv1alpha1.StandardDeviceAttributePodNetwork)
 	// NetworkInterfaceAttributeNetworkKind represents the type of the object used to configure this device.
 	// The value will always be "DeviceNetwork".
 	// The value type of this attribute is string.
-	// This atttribute is always present for devices created from a DeviceNetwork.
+	// This attribute is always present for devices created from a DeviceNetwork.
 	NetworkInterfaceAttributeNetworkKind NetworkInterfaceAttribute = NetworkInterfaceAttribute(multinetworkv1alpha1.StandardDeviceAttributeNetworkKind)
 	// DeviceConfiguration represents the configuration name in the DeviceNetwork
 	// object used to configure this device.
 	// The value type of this attribute is string.
-	// This atttribute is always present for devices created from a DeviceNetwork.
+	// This attribute is always present for devices created from a DeviceNetwork.
 	NetworkInterfaceAttributeDeviceConfiguration NetworkInterfaceAttribute = NetworkInterfaceAttributePrefix + "/" + "deviceConfiguration"
 
 	// Attributes with the prefix "hostDevice" represent the attributes of the host
@@ -57,7 +57,7 @@ const (
 
 	// NetworkInterfaceAttributeHostDeviceName represents the name of the host device used to create this network interface.
 	// The value type of this attribute is string.
-	// This atttribute is always present for devices created from a HostNetworkDevice.
+	// This attribute is always present for devices created from a HostNetworkDevice.
 	NetworkInterfaceAttributeHostDeviceName NetworkInterfaceAttribute = NetworkInterfaceAttributePrefix + "/" + "hostDeviceName"
 
 	// NetworkInterfaceAttributeMaxVirtualInterfaces represents the maximum number of virtual interfaces that can be

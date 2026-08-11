@@ -19,7 +19,7 @@ package configurators
 import (
 	"context"
 	"fmt"
-	"math/rand"
+	"math/rand/v2"
 	"net"
 
 	"github.com/lioneljouin/devicenetwork/apis/v1alpha1"
@@ -137,7 +137,7 @@ func generateRandomIP(netIP *net.IPNet) (net.IP, error) {
 		allOne := true
 
 		for i := range ip {
-			hostBits := byte(rand.Intn(256)) & ^netIP.Mask[i]
+			hostBits := byte(rand.IntN(256)) & ^netIP.Mask[i]
 			ip[i] |= hostBits
 
 			if hostBits != 0 {

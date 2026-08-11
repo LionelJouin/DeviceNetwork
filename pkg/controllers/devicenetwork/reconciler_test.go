@@ -211,7 +211,7 @@ func TestDeviceNetworkReconciler_Reconcile(t *testing.T) {
 					Pools: map[string]resourceslice.Pool{
 						"node-a": {Slices: []resourceslice.Slice{{
 							Devices: []resourcev1.Device{{
-								Name:       "net1-macvlan-cfg-eth0",
+								Name: "net1-macvlan-cfg-eth0",
 								Attributes: map[resourcev1.QualifiedName]resourcev1.DeviceAttribute{
 									resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributeDeviceType):          {StringValue: &deviceType},
 									resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributePodNetwork):          {StringValue: &podNetwork},
@@ -319,6 +319,8 @@ func TestDeviceNetworkReconciler_Reconcile(t *testing.T) {
 				},
 			},
 		},
+		// todo: test case with high limit of devices to ensure that the reconciler
+		//  can handle large numbers of devices without running into performance issues or timeouts.
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

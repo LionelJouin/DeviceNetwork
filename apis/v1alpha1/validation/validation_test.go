@@ -44,7 +44,7 @@ func TestValidateDeviceNetwork(t *testing.T) {
 			deviceNetwork: &v1alpha1.DeviceNetwork{
 				Spec: v1alpha1.DeviceNetworkSpec{
 					DeviceSelectors: []v1alpha1.DeviceSelector{
-						v1alpha1.DeviceSelector{
+						{
 							Name: "selector1",
 						},
 					},
@@ -63,7 +63,7 @@ func TestValidateDeviceNetwork(t *testing.T) {
 			deviceNetwork: &v1alpha1.DeviceNetwork{
 				Spec: v1alpha1.DeviceNetworkSpec{
 					DeviceSelectors: []v1alpha1.DeviceSelector{
-						v1alpha1.DeviceSelector{
+						{
 							Name: "selector1",
 							NodeSelector: &corev1.NodeSelector{
 								NodeSelectorTerms: []corev1.NodeSelectorTerm{{MatchFields: []corev1.NodeSelectorRequirement{{Key: "metadata.name", Operator: corev1.NodeSelectorOpIn, Values: []string{"worker"}}}}},
@@ -85,9 +85,9 @@ func TestValidateDeviceNetwork(t *testing.T) {
 			deviceNetwork: &v1alpha1.DeviceNetwork{
 				Spec: v1alpha1.DeviceNetworkSpec{
 					DeviceSelectors: []v1alpha1.DeviceSelector{
-						v1alpha1.DeviceSelector{
+						{
 							Name:      "selector1",
-							Selectors: []v1alpha1.Selector{v1alpha1.Selector{CEL: &v1alpha1.CELDeviceSelector{Expression: expression}}},
+							Selectors: []v1alpha1.Selector{{CEL: &v1alpha1.CELDeviceSelector{Expression: expression}}},
 						},
 					},
 					DeviceConfigurations: []v1alpha1.DeviceConfiguration{
@@ -105,7 +105,7 @@ func TestValidateDeviceNetwork(t *testing.T) {
 			deviceNetwork: &v1alpha1.DeviceNetwork{
 				Spec: v1alpha1.DeviceNetworkSpec{
 					DeviceSelectors: []v1alpha1.DeviceSelector{
-						v1alpha1.DeviceSelector{
+						{
 							Name: "selector1",
 						},
 					},
@@ -126,7 +126,7 @@ func TestValidateDeviceNetwork(t *testing.T) {
 				Spec: v1alpha1.DeviceNetworkSpec{
 
 					DeviceSelectors: []v1alpha1.DeviceSelector{
-						v1alpha1.DeviceSelector{
+						{
 							Name: "selector1",
 						},
 					},
@@ -146,10 +146,10 @@ func TestValidateDeviceNetwork(t *testing.T) {
 			deviceNetwork: &v1alpha1.DeviceNetwork{
 				Spec: v1alpha1.DeviceNetworkSpec{
 					DeviceSelectors: []v1alpha1.DeviceSelector{
-						v1alpha1.DeviceSelector{
+						{
 							Name: "selector1",
 						},
-						v1alpha1.DeviceSelector{
+						{
 							Name: "selector1",
 						},
 					},
@@ -170,9 +170,9 @@ func TestValidateDeviceNetwork(t *testing.T) {
 			deviceNetwork: &v1alpha1.DeviceNetwork{
 				Spec: v1alpha1.DeviceNetworkSpec{
 					DeviceSelectors: []v1alpha1.DeviceSelector{
-						v1alpha1.DeviceSelector{
+						{
 							Name:      "selector1",
-							Selectors: []v1alpha1.Selector{v1alpha1.Selector{CEL: &v1alpha1.CELDeviceSelector{Expression: expression}}},
+							Selectors: []v1alpha1.Selector{{CEL: &v1alpha1.CELDeviceSelector{Expression: expression}}},
 						},
 					},
 					DeviceConfigurations: []v1alpha1.DeviceConfiguration{
@@ -196,9 +196,9 @@ func TestValidateDeviceNetwork(t *testing.T) {
 			deviceNetwork: &v1alpha1.DeviceNetwork{
 				Spec: v1alpha1.DeviceNetworkSpec{
 					DeviceSelectors: []v1alpha1.DeviceSelector{
-						v1alpha1.DeviceSelector{
+						{
 							Name:      "selector1",
-							Selectors: []v1alpha1.Selector{v1alpha1.Selector{CEL: &v1alpha1.CELDeviceSelector{Expression: expression}}},
+							Selectors: []v1alpha1.Selector{{CEL: &v1alpha1.CELDeviceSelector{Expression: expression}}},
 						},
 					},
 					DeviceConfigurations: []v1alpha1.DeviceConfiguration{
@@ -218,9 +218,9 @@ func TestValidateDeviceNetwork(t *testing.T) {
 			deviceNetwork: &v1alpha1.DeviceNetwork{
 				Spec: v1alpha1.DeviceNetworkSpec{
 					DeviceSelectors: []v1alpha1.DeviceSelector{
-						v1alpha1.DeviceSelector{
+						{
 							Name:      "selector1",
-							Selectors: []v1alpha1.Selector{v1alpha1.Selector{CEL: &v1alpha1.CELDeviceSelector{Expression: expression}}},
+							Selectors: []v1alpha1.Selector{{CEL: &v1alpha1.CELDeviceSelector{Expression: expression}}},
 						},
 					},
 					DeviceConfigurations: []v1alpha1.DeviceConfiguration{
@@ -240,13 +240,13 @@ func TestValidateDeviceNetwork(t *testing.T) {
 			deviceNetwork: &v1alpha1.DeviceNetwork{
 				Spec: v1alpha1.DeviceNetworkSpec{
 					DeviceSelectors: []v1alpha1.DeviceSelector{
-						v1alpha1.DeviceSelector{
+						{
 							Name:      "selector1",
-							Selectors: []v1alpha1.Selector{v1alpha1.Selector{CEL: &v1alpha1.CELDeviceSelector{Expression: expression}}},
+							Selectors: []v1alpha1.Selector{{CEL: &v1alpha1.CELDeviceSelector{Expression: expression}}},
 						},
-						v1alpha1.DeviceSelector{
+						{
 							Name:      "selector2",
-							Selectors: []v1alpha1.Selector{v1alpha1.Selector{CEL: &v1alpha1.CELDeviceSelector{Expression: expression}}},
+							Selectors: []v1alpha1.Selector{{CEL: &v1alpha1.CELDeviceSelector{Expression: expression}}},
 						},
 					},
 					DeviceConfigurations: []v1alpha1.DeviceConfiguration{
@@ -265,7 +265,7 @@ func TestValidateDeviceNetwork(t *testing.T) {
 			deviceNetwork: &v1alpha1.DeviceNetwork{
 				Spec: v1alpha1.DeviceNetworkSpec{
 					DeviceSelectors: []v1alpha1.DeviceSelector{
-						v1alpha1.DeviceSelector{
+						{
 							Name: "selector1",
 						},
 					},
@@ -288,10 +288,10 @@ func TestValidateDeviceNetwork(t *testing.T) {
 			deviceNetwork: &v1alpha1.DeviceNetwork{
 				Spec: v1alpha1.DeviceNetworkSpec{
 					DeviceSelectors: []v1alpha1.DeviceSelector{
-						v1alpha1.DeviceSelector{
+						{
 							Name: "selector1",
 						},
-						v1alpha1.DeviceSelector{
+						{
 							Name: "selector2",
 						},
 					},
@@ -312,7 +312,7 @@ func TestValidateDeviceNetwork(t *testing.T) {
 				return &v1alpha1.DeviceNetwork{
 					Spec: v1alpha1.DeviceNetworkSpec{
 						DeviceSelectors: []v1alpha1.DeviceSelector{
-							v1alpha1.DeviceSelector{
+							{
 								Name:      "selector1",
 								Selectors: []v1alpha1.Selector{v1alpha1.Selector{CEL: &v1alpha1.CELDeviceSelector{Expression: strings.ReplaceAll(expression, `""`, `"`+strings.Repeat("x", v1alpha1.CELSelectorExpressionMaxLength-len(expression)+1)+`"`)}}},
 							},
@@ -335,9 +335,9 @@ func TestValidateDeviceNetwork(t *testing.T) {
 			deviceNetwork: &v1alpha1.DeviceNetwork{
 				Spec: v1alpha1.DeviceNetworkSpec{
 					DeviceSelectors: []v1alpha1.DeviceSelector{
-						v1alpha1.DeviceSelector{
+						{
 							Name:      "selector1",
-							Selectors: []v1alpha1.Selector{v1alpha1.Selector{CEL: nil}},
+							Selectors: []v1alpha1.Selector{{CEL: nil}},
 						},
 					},
 					DeviceConfigurations: []v1alpha1.DeviceConfiguration{
@@ -357,7 +357,7 @@ func TestValidateDeviceNetwork(t *testing.T) {
 			deviceNetwork: &v1alpha1.DeviceNetwork{
 				Spec: v1alpha1.DeviceNetworkSpec{
 					DeviceSelectors: []v1alpha1.DeviceSelector{
-						v1alpha1.DeviceSelector{
+						{
 							Name: "selector1",
 						},
 					},
@@ -396,23 +396,7 @@ func TestValidateDeviceNetwork(t *testing.T) {
 			deviceNetwork: &v1alpha1.DeviceNetwork{
 				Spec: v1alpha1.DeviceNetworkSpec{
 					DeviceSelectors: []v1alpha1.DeviceSelector{
-						v1alpha1.DeviceSelector{
-							Name: "selector1",
-						},
-					},
-				},
-			},
-			want: field.ErrorList{
-				field.Forbidden(field.NewPath("spec").Child("deviceSelectors").Index(0), "device selector must be referenced by at least one device configuration"),
-				field.Forbidden(field.NewPath("spec").Child("deviceConfigurations"), "must have at least one device configuration"),
-			},
-		},
-		{
-			name: "invalid-no-device-configuration",
-			deviceNetwork: &v1alpha1.DeviceNetwork{
-				Spec: v1alpha1.DeviceNetworkSpec{
-					DeviceSelectors: []v1alpha1.DeviceSelector{
-						v1alpha1.DeviceSelector{
+						{
 							Name: "selector1",
 						},
 					},
@@ -428,7 +412,7 @@ func TestValidateDeviceNetwork(t *testing.T) {
 			deviceNetwork: &v1alpha1.DeviceNetwork{
 				Spec: v1alpha1.DeviceNetworkSpec{
 					DeviceSelectors: []v1alpha1.DeviceSelector{
-						v1alpha1.DeviceSelector{
+						{
 							Name: "selector1",
 						},
 					},
@@ -451,7 +435,7 @@ func TestValidateDeviceNetwork(t *testing.T) {
 			deviceNetwork: &v1alpha1.DeviceNetwork{
 				Spec: v1alpha1.DeviceNetworkSpec{
 					DeviceSelectors: []v1alpha1.DeviceSelector{
-						v1alpha1.DeviceSelector{
+						{
 							Name: "selector1",
 						},
 					},

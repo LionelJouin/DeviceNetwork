@@ -25,11 +25,11 @@ import (
 // ValidateDeviceNetwork validates a DeviceNetwork.
 func ValidateDeviceNetwork(deviceNetwork *v1alpha1.DeviceNetwork) field.ErrorList {
 	allErrs := field.ErrorList{}
-	allErrs = append(allErrs, validateValidateDeviceNetworkSpec(&deviceNetwork.Spec, field.NewPath("spec"))...)
+	allErrs = append(allErrs, validateDeviceNetworkSpec(&deviceNetwork.Spec, field.NewPath("spec"))...)
 	return allErrs
 }
 
-func validateValidateDeviceNetworkSpec(deviceNetworkSpec *v1alpha1.DeviceNetworkSpec, fldPath *field.Path) field.ErrorList {
+func validateDeviceNetworkSpec(deviceNetworkSpec *v1alpha1.DeviceNetworkSpec, fldPath *field.Path) field.ErrorList {
 	var allErrs field.ErrorList
 
 	selectors := listSelectorNames(deviceNetworkSpec.DeviceSelectors)
@@ -71,7 +71,7 @@ func validateDeviceSelector(deviceSelector v1alpha1.DeviceSelector, fldPath *fie
 		allErrs = append(allErrs, field.Forbidden(fldPath, "device selector must be referenced by at least one device configuration"))
 	}
 
-	allErrs = append(allErrs, validation.ValidateSlice(deviceSelector.Selectors, v1alpha1.DeviceSelectorMaxSize,
+	allErrs = append(allErrs, validation.ValidateSlice(deviceSelector.Selectors, v1alpha1.SelectorPerDeviceSelectorMaxSize,
 		func(selector v1alpha1.Selector, fldPath *field.Path) field.ErrorList {
 			return validateSelector(selector, fldPath)
 		},
@@ -122,7 +122,7 @@ func validateDeviceConfiguration(deviceConfiguration v1alpha1.DeviceConfiguratio
 		allErrs = append(allErrs, field.Required(fldPath.Child("deviceSelectors"), "must reference at least one device selector"))
 	}
 
-	allErrs = append(allErrs, validation.ValidateSet(deviceConfiguration.DeviceSelectors, v1alpha1.DeviceSelectorMaxSize,
+	allErrs = append(allErrs, validation.ValidateSet(deviceConfiguration.DeviceSelectors, v1alpha1.SelectorPerDeviceConfigurationMaxSize,
 		func(name string, fldPath *field.Path) field.ErrorList {
 			if !selectors.Has(name) {
 				return field.ErrorList{field.NotFound(fldPath, name)}

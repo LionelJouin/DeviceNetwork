@@ -257,13 +257,19 @@ func TestEventHandlers(t *testing.T) {
 					switch actionType {
 					case "create":
 						storeErr = store.Add(obj)
-						deviceCache.Broadcaster().Action(watch.Added, obj)
+						if err := deviceCache.Broadcaster().Action(watch.Added, obj); err != nil {
+							t.Fatal("broadcast added failed:", err)
+						}
 					case "update":
 						storeErr = store.Update(obj)
-						deviceCache.Broadcaster().Action(watch.Modified, obj)
+						if err := deviceCache.Broadcaster().Action(watch.Modified, obj); err != nil {
+							t.Fatal("broadcast modified failed:", err)
+						}
 					case "delete":
 						storeErr = store.Delete(obj)
-						deviceCache.Broadcaster().Action(watch.Deleted, obj)
+						if err := deviceCache.Broadcaster().Action(watch.Deleted, obj); err != nil {
+							t.Fatal("broadcast deleted failed:", err)
+						}
 					}
 					if storeErr != nil {
 						t.Fatal("device action failed:", storeErr)
