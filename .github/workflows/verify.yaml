@@ -37,4 +37,4 @@ jobs:
           go-version-file: go.mod
 
       - name: Unit tests
-        run: sudo env "PATH=$PATH" go test ./pkg/... ./cmd/... ./apis/... -race -count=1
+        run: make test

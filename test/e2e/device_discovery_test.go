@@ -32,6 +32,26 @@ import (
 
 const driverName = "devicenetwork.io"
 
+func getDevicesForNetwork(ctx context.Context, g Gomega, networkName string) []resourcev1.Device {
+	slices, err := kubeClient.ResourceV1().ResourceSlices().List(ctx, metav1.ListOptions{})
+	g.Expect(err).NotTo(HaveOccurred())
+
+	var devices []resourcev1.Device
+	for _, slice := range slices.Items {
+		if slice.Spec.Driver != driverName {
+			continue
+		}
+		for _, device := range slice.Spec.Devices {
+			attr, ok := device.Attributes[resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributePodNetwork)]
+			if ok && attr.StringValue != nil && *attr.StringValue == networkName {
+				devices = append(devices, device)
+			}
+		}
+	}
+
+	return devices
+}
+
 var _ = Describe("DeviceNetwork", func() {
 	It("should publish a device in a ResourceSlice for macvlan DeviceNetwork", func(ctx context.Context) {
 		deviceNetwork := &v1alpha1.DeviceNetwork{
@@ -82,26 +102,10 @@ var _ = Describe("DeviceNetwork", func() {
 
 		deviceNetwork, err := deviceNetworkClient.DevicenetworkV1alpha1().DeviceNetworks().Create(ctx, deviceNetwork, metav1.CreateOptions{})
 		Expect(err).NotTo(HaveOccurred())
-		DeferCleanup(func() {
-			_ = deviceNetworkClient.DevicenetworkV1alpha1().DeviceNetworks().Delete(ctx, deviceNetwork.Name, metav1.DeleteOptions{})
-		})
 
+		By("waiting for the device to appear in a ResourceSlice")
 		Eventually(func(g Gomega) {
-			slices, err := kubeClient.ResourceV1().ResourceSlices().List(ctx, metav1.ListOptions{})
-			g.Expect(err).NotTo(HaveOccurred())
-
-			var devices []resourcev1.Device
-			for _, slice := range slices.Items {
-				if slice.Spec.Driver != driverName {
-					continue
-				}
-				for _, device := range slice.Spec.Devices {
-					attr, ok := device.Attributes[resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributePodNetwork)]
-					if ok && attr.StringValue != nil && *attr.StringValue == "e2e-test-net" {
-						devices = append(devices, device)
-					}
-				}
-			}
+			devices := getDevicesForNetwork(ctx, g, "e2e-test-net")
 
 			g.Expect(devices).To(HaveLen(1), "expected exactly one device for interface %s", macvlanInterfaceName)
 
@@ -113,6 +117,16 @@ var _ = Describe("DeviceNetwork", func() {
 
 			g.Expect(d.Attributes).To(HaveKey(resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributeNetworkKind)))
 			g.Expect(d.Attributes).To(HaveKey(resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributeDeviceConfiguration)))
+		}).WithTimeout(30 * time.Second).WithPolling(time.Second).Should(Succeed())
+
+		By("deleting the DeviceNetwork")
+		err = deviceNetworkClient.DevicenetworkV1alpha1().DeviceNetworks().Delete(ctx, deviceNetwork.Name, metav1.DeleteOptions{})
+		Expect(err).NotTo(HaveOccurred())
+
+		By("verifying the device is removed from ResourceSlices")
+		Eventually(func(g Gomega) {
+			devices := getDevicesForNetwork(ctx, g, "e2e-test-net")
+			g.Expect(devices).To(BeEmpty(), "expected no devices for deleted DeviceNetwork")
 		}).WithTimeout(30 * time.Second).WithPolling(time.Second).Should(Succeed())
 	})
 })

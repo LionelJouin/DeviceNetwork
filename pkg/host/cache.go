@@ -321,21 +321,28 @@ type listWatch struct {
 func (listWatch) IsWatchListSemanticsUnSupported() bool { return true }
 
 func (dc *DeviceCache) watchDevices(ctx context.Context) {
-runLoop:
+	ticker := time.NewTicker(dc.interval)
+	defer ticker.Stop()
+
+	dc.pollDevices()
+
 	for {
 		select {
-		case <-time.After(dc.interval):
-			netInfo, err := ghw.Network()
-			if err != nil {
-				continue
-			}
-
-			for _, nic := range netInfo.NICs {
-				key := nic.Name
-				dc.queue.Add(key)
-			}
+		case <-ticker.C:
+			dc.pollDevices()
 		case <-ctx.Done():
-			break runLoop
+			return
 		}
+	}
+}
+
+func (dc *DeviceCache) pollDevices() {
+	netInfo, err := ghw.Network()
+	if err != nil {
+		return
+	}
+
+	for _, nic := range netInfo.NICs {
+		dc.queue.Add(nic.Name)
 	}
 }

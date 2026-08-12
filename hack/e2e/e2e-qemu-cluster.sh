@@ -21,12 +21,11 @@
 #                curl, ssh, KVM support (/dev/kvm).
 #
 # Usage:
-#   hack/e2e/e2e-cluster.sh build       Build base VM image (~60s, one-time)
-#   hack/e2e/e2e-cluster.sh up          Start cluster (~5s with direct kernel boot)
-#   hack/e2e/e2e-cluster.sh down        Stop cluster
-#   hack/e2e/e2e-cluster.sh ssh [cmd]   SSH into the VM
-#   hack/e2e/e2e-cluster.sh kubeconfig  Print kubeconfig path
-#   hack/e2e/e2e-cluster.sh deploy      Build and deploy DeviceNetwork into the cluster
+#   hack/e2e/e2e-qemu-cluster.sh up          Start cluster (~2-3 min)
+#   hack/e2e/e2e-qemu-cluster.sh down        Stop cluster
+#   hack/e2e/e2e-qemu-cluster.sh ssh [cmd]   SSH into the VM
+#   hack/e2e/e2e-qemu-cluster.sh kubeconfig  Print kubeconfig path
+#   hack/e2e/e2e-qemu-cluster.sh deploy      Build and deploy DeviceNetwork into the cluster
 
 set -euo pipefail
 
@@ -36,25 +35,24 @@ PROJECT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 E2E_DIR="${E2E_DIR:-${PROJECT_DIR}/_output/e2e}"
 ALPINE_VERSION="${ALPINE_VERSION:-3.21}"
 ALPINE_RELEASE="${ALPINE_RELEASE:-3.21.6}"
-K3S_VERSION="${K3S_VERSION:-v1.33.1+k3s1}"
+K3S_VERSION="${K3S_VERSION:-v1.36.3+k3s1}"
 VM_MEMORY="${VM_MEMORY:-4096}"
 VM_CPUS="${VM_CPUS:-4}"
 SSH_PORT="${SSH_PORT:-2222}"
 API_PORT="${API_PORT:-6443}"
+E2E_IMAGE="${E2E_IMAGE:-devicenetwork:e2e}"
 IGB_COUNT="${IGB_COUNT:-2}"
+IGB_PLAIN_COUNT="${IGB_PLAIN_COUNT:-2}"
+VIRTIO_NET_COUNT="${VIRTIO_NET_COUNT:-2}"
 SRIOV_VF_COUNT="${SRIOV_VF_COUNT:-4}"
 
-BASE_IMAGE="${E2E_DIR}/base.qcow2"
-OVERLAY_IMAGE="${E2E_DIR}/overlay.qcow2"
+VM_IMAGE="${E2E_DIR}/vm.qcow2"
 SEED_ISO="${E2E_DIR}/seed.iso"
 SSH_KEY="${E2E_DIR}/id_ed25519"
 QEMU_PID="${E2E_DIR}/qemu.pid"
 KUBECONFIG_PATH="${E2E_DIR}/kubeconfig"
 SERIAL_LOG="${E2E_DIR}/serial.log"
-KERNEL="${E2E_DIR}/vmlinuz-lts"
-INITRD="${E2E_DIR}/initramfs-lts"
 CLOUD_IMAGE="${E2E_DIR}/alpine-cloud.qcow2"
-ROOT_DEV_FILE="${E2E_DIR}/root-device"
 
 CLOUD_IMAGE_URL="https://dl-cdn.alpinelinux.org/alpine/v${ALPINE_VERSION}/releases/cloud/nocloud_alpine-${ALPINE_RELEASE}-x86_64-bios-cloudinit-r0.qcow2"
 
@@ -124,50 +122,67 @@ instance-id: e2e-node
 local-hostname: e2e-node
 EOF
 
-    # cloud-init user-data as a shell script
     cat > "$tmpdir/user-data" <<USERDATA
-#!/bin/sh
-set -ex
+#cloud-config
+disable_root: false
+ssh_pwauth: false
 
-# SSH
-mkdir -p /root/.ssh
-echo "${ssh_pubkey}" > /root/.ssh/authorized_keys
-chmod 700 /root/.ssh
-chmod 600 /root/.ssh/authorized_keys
+write_files:
+  - path: /usr/lib/udev/net-name-pci.sh
+    permissions: '0755'
+    content: |
+      #!/bin/sh
+      dev="/sys/class/net/\$1/device"
+      [ -L "\$dev" ] || exit 1
+      if [ -L "\$dev/physfn" ]; then
+        pci=\$(basename \$(readlink -f "\$dev/physfn"))
+        vfidx=""
+        for vf in "\$dev/physfn"/virtfn*; do
+          [ -L "\$vf" ] || continue
+          if [ "\$(basename \$(readlink -f "\$vf"))" = "\$(basename \$(readlink -f "\$dev"))" ]; then
+            vfidx=\$(echo "\$vf" | sed 's/.*virtfn//')
+            break
+          fi
+        done
+        func=\$(( vfidx + 1 ))
+      else
+        pci=\$(basename \$(readlink -f "\$dev"))
+        func=\$(echo "\$pci" | cut -d. -f2)
+      fi
+      bus=\$(printf %d 0x\$(echo "\$pci" | cut -d: -f2))
+      rest=\$(echo "\$pci" | cut -d: -f3)
+      slot=\$(printf %d 0x\$(echo "\$rest" | cut -d. -f1))
+      if [ "\$func" = "0" ]; then echo "enp\${bus}s\${slot}"; else echo "enp\${bus}s\${slot}f\${func}"; fi
+  - path: /usr/lib/udev/rules.d/80-net-name-slot.rules
+    content: |
+      SUBSYSTEM=="net", ACTION=="add", ATTR{type}=="1", DRIVERS=="igb", PROGRAM="/usr/lib/udev/net-name-pci.sh %k", NAME="%c"
+      SUBSYSTEM=="net", ACTION=="add", ATTR{type}=="1", DRIVERS=="igbvf", PROGRAM="/usr/lib/udev/net-name-pci.sh %k", NAME="%c"
 
-# Enable community repo for k3s dependencies
-sed -i 's|^#\(.*community\)|\1|' /etc/apk/repositories
-apk update
+users:
+  - name: root
+    lock_passwd: false
+    ssh_authorized_keys:
+      - ${ssh_pubkey}
 
-# Install the LTS kernel (has igb/igbvf drivers; linux-virt does not)
-apk add linux-lts
-
-# Install dependencies
-apk add --no-cache bash curl pciutils iproute2 iptables cni-plugins
-
-# Enable cgroups v2 (required by k3s)
-rc-update add cgroups default
-rc-service cgroups start || true
-
-# Load modules on boot
-cat >> /etc/modules <<MODULES
-igb
-igbvf
-br_netfilter
-MODULES
-
-# Install k3s
-curl -sfL https://get.k3s.io | \
-    INSTALL_K3S_VERSION="${K3S_VERSION}" \
-    INSTALL_K3S_EXEC="server \
-        --disable=traefik \
-        --disable=metrics-server \
-        --disable=servicelb \
-        --node-name=e2e-node \
-        --write-kubeconfig-mode=644" \
-    sh -
-
-touch /var/lib/cloud-init-done
+runcmd:
+  - sed -i 's|^#\(.*community\)|\1|' /etc/apk/repositories
+  - apk update
+  - apk add linux-lts
+  - mkinitfs \$(ls /lib/modules/ | grep lts | head -1)
+  - apk add --no-cache bash curl pciutils iproute2 iptables cni-plugins numactl-tools ethtool eudev
+  - setup-devd udev
+  - rm -f /etc/udev/rules.d/70-persistent-net.rules
+  - rc-update add cgroups default
+  - rc-service cgroups start || true
+  - printf 'igb\nigbvf\nbr_netfilter\n' >> /etc/modules
+  - mount --make-rshared /
+  - printf '#!/sbin/openrc-run\ncommand="/bin/mount"\ncommand_args="--make-rshared /"\n' > /etc/init.d/shared-mount
+  - chmod +x /etc/init.d/shared-mount
+  - rc-update add shared-mount boot
+  - sed -i 's/vmlinuz-virt/vmlinuz-lts/g; s/initramfs-virt/initramfs-lts/g' /boot/extlinux.conf
+  - |
+    curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION="${K3S_VERSION}" INSTALL_K3S_EXEC="server --disable=traefik --disable=metrics-server --disable=servicelb --node-name=e2e-node --write-kubeconfig-mode=644" sh -
+  - touch /var/lib/cloud-init-done
 USERDATA
 
     if command -v genisoimage &>/dev/null; then
@@ -190,23 +205,56 @@ launch_qemu() {
     shift
     local extra_args=("$@")
 
+    local mem_per_node=$(( VM_MEMORY / 2 ))
+    local cpus_per_node=$(( VM_CPUS / 2 ))
+    local total_nics=$(( IGB_COUNT + IGB_PLAIN_COUNT + VIRTIO_NET_COUNT ))
+    local first_half=$(( total_nics / 2 ))
+
     local qemu_args=(
         qemu-system-x86_64
         -machine q35,accel=kvm
         -cpu host
         -m "$VM_MEMORY"
-        -smp "$VM_CPUS"
+        -smp "${VM_CPUS},sockets=2,cores=${cpus_per_node},threads=1"
+        -object "memory-backend-ram,id=mem0,size=${mem_per_node}M"
+        -object "memory-backend-ram,id=mem1,size=${mem_per_node}M"
+        -numa "node,nodeid=0,cpus=0-$(( cpus_per_node - 1 )),memdev=mem0"
+        -numa "node,nodeid=1,cpus=${cpus_per_node}-$(( VM_CPUS - 1 )),memdev=mem1"
+        -device "pxb-pcie,id=pci_numa0,bus_nr=16,bus=pcie.0,numa_node=0"
+        -device "pxb-pcie,id=pci_numa1,bus_nr=32,bus=pcie.0,numa_node=1"
         -display none
         -serial "file:${SERIAL_LOG}"
-        -drive "file=${image},if=virtio,format=qcow2"
+        -drive "file=${image},if=none,id=disk0,format=qcow2"
+        -device "virtio-blk-pci,drive=disk0,bus=pcie.0"
         -netdev "user,id=mgmt,hostfwd=tcp::${SSH_PORT}-:22,hostfwd=tcp::${API_PORT}-:6443"
-        -device virtio-net-pci,netdev=mgmt
+        -device virtio-net-pci,netdev=mgmt,bus=pcie.0
     )
 
+    local nic_idx=0
     for i in $(seq 1 "$IGB_COUNT"); do
+        nic_idx=$(( nic_idx + 1 ))
+        local pci_bus=$(( nic_idx > first_half ? 1 : 0 ))
         qemu_args+=(
-            -device "pcie-root-port,id=rp${i},slot=${i}"
-            -device "igb,bus=rp${i},id=igb${i}"
+            -device "pcie-root-port,id=rp${nic_idx},bus=pci_numa${pci_bus},chassis=${nic_idx}"
+            -device "igb,bus=rp${nic_idx},id=igb${nic_idx}"
+        )
+    done
+
+    for i in $(seq 1 "$IGB_PLAIN_COUNT"); do
+        nic_idx=$(( nic_idx + 1 ))
+        local pci_bus=$(( nic_idx > first_half ? 1 : 0 ))
+        qemu_args+=(
+            -device "pcie-root-port,id=rp${nic_idx},bus=pci_numa${pci_bus},chassis=${nic_idx}"
+            -device "igb,bus=rp${nic_idx},id=igb${nic_idx}"
+        )
+    done
+
+    for i in $(seq 1 "$VIRTIO_NET_COUNT"); do
+        nic_idx=$(( nic_idx + 1 ))
+        local pci_bus=$(( nic_idx > first_half ? 1 : 0 ))
+        qemu_args+=(
+            -device "pcie-root-port,id=rp${nic_idx},bus=pci_numa${pci_bus},chassis=${nic_idx}"
+            -device "virtio-net-pci,bus=rp${nic_idx},id=virtio${i}"
         )
     done
 
@@ -220,8 +268,13 @@ launch_qemu() {
 # Commands
 # -----------------------------------------------------------------------------
 
-cmd_build() {
-    echo "=== Building e2e base image ==="
+cmd_up() {
+    if check_running; then
+        echo "Cluster already running (PID $(cat "$QEMU_PID"))."
+        return 0
+    fi
+
+    echo "=== Starting e2e cluster ==="
     mkdir -p "$E2E_DIR"
 
     if [[ ! -f "$SSH_KEY" ]]; then
@@ -234,14 +287,16 @@ cmd_build() {
         curl -fSL --progress-bar -o "$CLOUD_IMAGE" "$CLOUD_IMAGE_URL"
     fi
 
-    cp "$CLOUD_IMAGE" "$BASE_IMAGE"
-    qemu-img resize -q "$BASE_IMAGE" 10G
+    echo "  Creating VM disk..."
+    cp "$CLOUD_IMAGE" "$VM_IMAGE"
+    qemu-img resize -q "$VM_IMAGE" 10G
 
     make_seed_iso
 
-    echo "  Provisioning VM (one-time, takes ~60-90s)..."
-    launch_qemu "$BASE_IMAGE" \
-        -drive "file=${SEED_ISO},if=virtio,media=cdrom"
+    echo "  Booting VM (provisioning takes ~2-3 min on first run)..."
+    launch_qemu "$VM_IMAGE" \
+        -drive "file=${SEED_ISO},if=none,id=seed,media=cdrom" \
+        -device "virtio-blk-pci,drive=seed,bus=pcie.0"
 
     wait_ssh 180
 
@@ -256,62 +311,17 @@ cmd_build() {
         sleep 5
     done
 
-    wait_k3s 180
+    echo "  Rebooting into LTS kernel..."
+    ssh_cmd "reboot" || true
+    sleep 5
+    wait_ssh 60
 
-    echo "  Extracting LTS kernel + initrd for direct boot..."
-    scp_from "/boot/vmlinuz-lts" "$KERNEL"
-    scp_from "/boot/initramfs-lts" "$INITRD"
+    wait_k3s 120
 
-    echo "  Detecting root device..."
-    ssh_cmd "findmnt -n -o SOURCE /" > "$ROOT_DEV_FILE"
-    echo "  Root device: $(cat "$ROOT_DEV_FILE")"
-
-    echo "  Shutting down..."
-    ssh_cmd "poweroff" || true
-    sleep 3
-    if check_running; then
-        kill "$(cat "$QEMU_PID")" 2>/dev/null || true
-    fi
-    rm -f "$QEMU_PID"
-
-    echo "=== Base image ready ==="
-    echo "  Image:   $BASE_IMAGE"
-    echo "  Kernel:  $KERNEL"
-    echo "  Initrd:  $INITRD"
-}
-
-cmd_up() {
-    if check_running; then
-        echo "Cluster already running (PID $(cat "$QEMU_PID"))."
-        return 0
-    fi
-
-    for f in "$BASE_IMAGE" "$KERNEL" "$INITRD" "$ROOT_DEV_FILE"; do
-        if [[ ! -f "$f" ]]; then
-            echo "Missing $f — run 'build' first."
-            return 1
-        fi
-    done
-
-    echo "=== Starting e2e cluster ==="
-
-    local root_dev
-    root_dev=$(cat "$ROOT_DEV_FILE")
-
-    qemu-img create -q -f qcow2 -b "$BASE_IMAGE" -F qcow2 "$OVERLAY_IMAGE"
-
-    launch_qemu "$OVERLAY_IMAGE" \
-        -kernel "$KERNEL" \
-        -initrd "$INITRD" \
-        -append "root=${root_dev} modules=ext4,igb,igbvf console=ttyS0 quiet"
-
-    wait_ssh 30
-    wait_k3s 60
-
-    echo "  Creating SR-IOV VFs on igb PFs..."
+    echo "  Creating SR-IOV VFs on first ${IGB_COUNT} igb PFs..."
     ssh_cmd "modprobe igb; modprobe igbvf" || true
     local pf_addrs
-    pf_addrs=$(ssh_cmd "ls -d /sys/bus/pci/drivers/igb/0000:* 2>/dev/null | xargs -I{} basename {}" || true)
+    pf_addrs=$(ssh_cmd "ls -d /sys/bus/pci/drivers/igb/0000:* 2>/dev/null | xargs -I{} basename {} | head -n ${IGB_COUNT}" || true)
     for addr in $pf_addrs; do
         ssh_cmd "echo ${SRIOV_VF_COUNT} > /sys/bus/pci/devices/${addr}/sriov_numvfs" 2>/dev/null || true
         local pf_iface
@@ -345,7 +355,7 @@ cmd_down() {
         fi
         rm -f "$QEMU_PID"
     fi
-    rm -f "$OVERLAY_IMAGE"
+    rm -f "$VM_IMAGE" "$SEED_ISO"
     echo "Cluster stopped."
 }
 
@@ -372,19 +382,15 @@ cmd_deploy() {
 
     echo "=== Deploying DeviceNetwork ==="
 
-    echo "  Building container image..."
-    docker build -q -t devicenetwork:e2e -f "$PROJECT_DIR/build/Dockerfile" "$PROJECT_DIR"
-
-    echo "  Loading image into k3s..."
-    docker save devicenetwork:e2e | ssh_cmd "k3s ctr images import -"
+    echo "  Loading image ${E2E_IMAGE} into k3s..."
+    docker save "$E2E_IMAGE" | ssh_cmd "k3s ctr images import -"
 
     echo "  Applying manifests..."
     ssh_cmd "k3s kubectl apply -f -" < "$PROJECT_DIR/deployment/devicenetwork.io_devicenetworks.yaml"
     ssh_cmd "k3s kubectl apply -f -" < "$PROJECT_DIR/deployment/deviceclass.yaml"
 
-    # Patch the DaemonSet to use the local e2e image
     sed \
-        -e 's|image:.*|image: docker.io/library/devicenetwork:e2e|' \
+        -e "s|image:.*|image: docker.io/library/${E2E_IMAGE}|" \
         -e 's|imagePullPolicy:.*|imagePullPolicy: Never|' \
         "$PROJECT_DIR/deployment/device-network.yaml" \
         | ssh_cmd "k3s kubectl apply -f -"
@@ -407,12 +413,11 @@ cmd_help() {
 Usage: $0 <command>
 
 Commands:
-  build       Build base VM image with Alpine + k3s (one-time, ~60-90s)
-  up          Start cluster with igb SR-IOV NICs (~5s with direct kernel boot)
-  down        Stop cluster and remove overlay
+  up          Start cluster with Alpine + k3s + igb SR-IOV NICs (~2-3 min)
+  down        Stop cluster and remove VM disk
   ssh [cmd]   SSH into the VM (optionally run a command)
   kubeconfig  Print kubeconfig file path
-  deploy      Build + deploy DeviceNetwork into the cluster
+  deploy      Deploy DeviceNetwork into the cluster (build image first)
   clean       Stop cluster and remove all generated artifacts
 
 Environment variables:
@@ -424,13 +429,15 @@ Environment variables:
   VM_CPUS          VM CPU count             (default: ${VM_CPUS})
   SSH_PORT         Host SSH forward port    (default: ${SSH_PORT})
   API_PORT         Host k8s API port        (default: ${API_PORT})
-  IGB_COUNT        Number of igb PF NICs    (default: ${IGB_COUNT})
+  IGB_COUNT        Number of igb SR-IOV PFs  (default: ${IGB_COUNT})
+  IGB_PLAIN_COUNT  Number of igb NICs w/o VFs (default: ${IGB_PLAIN_COUNT})
+  VIRTIO_NET_COUNT Number of virtio-net NICs (default: ${VIRTIO_NET_COUNT})
+  E2E_IMAGE        Container image to deploy (default: ${E2E_IMAGE})
   SRIOV_VF_COUNT   VFs to create per PF     (default: ${SRIOV_VF_COUNT})
 EOF
 }
 
 case "${1:-help}" in
-    build)      cmd_build ;;
     up)         cmd_up ;;
     down)       cmd_down ;;
     ssh)        shift; cmd_ssh "$@" ;;

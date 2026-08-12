@@ -21,7 +21,6 @@ package driver
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -215,8 +214,6 @@ func (d *Driver) allocateDevices(
 		return nil, fmt.Errorf("failed to get devices for claim: %v", err)
 	}
 
-	var errs []error
-
 	statusUpdates := &resourceapply.ResourceClaimStatusApplyConfiguration{Devices: []resourceapply.AllocatedDeviceStatusApplyConfiguration{}}
 
 	for _, resolvedDevice := range resolvedDevices {
@@ -256,7 +253,7 @@ func (d *Driver) allocateDevices(
 			resolvedDevice.AllocatedDeviceStatus,
 		)
 		if err != nil {
-			errs = append(errs, fmt.Errorf("failed to allocate device %v: %v", resolvedDevice, err))
+			klog.FromContext(ctx).Error(fmt.Errorf("failed to allocate device %v: %v", resolvedDevice, err), "skipping device")
 			continue
 		}
 
@@ -290,10 +287,6 @@ func (d *Driver) allocateDevices(
 		}
 
 		statusUpdates.WithDevices(resourceClaimStatusDevice)
-	}
-
-	if len(errs) > 0 {
-		return nil, fmt.Errorf("failed to allocate devices: %w", errors.Join(errs...))
 	}
 
 	resourceClaimApply := resourceapply.ResourceClaim(claim.GetName(), claim.GetNamespace()).WithStatus(statusUpdates)
