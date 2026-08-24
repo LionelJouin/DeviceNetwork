@@ -29,6 +29,7 @@ import (
 	"github.com/lioneljouin/devicenetwork/pkg/controllers/devicenetwork"
 	"github.com/lioneljouin/devicenetwork/pkg/driver"
 	"github.com/lioneljouin/devicenetwork/pkg/host"
+	"github.com/lioneljouin/devicenetwork/pkg/nri"
 	"github.com/lioneljouin/devicenetwork/pkg/resolver"
 	"github.com/lioneljouin/devicenetwork/pkg/store"
 	"github.com/spf13/cobra"
@@ -165,6 +166,14 @@ func (ro *runOptions) run(ctx context.Context) error {
 		v1alpha1.DeviceTypeMacvlan: macvlanConfigurator,
 	}
 
+	nriPlugin := nri.NewPlugin(
+		ro.pluginName,
+		ro.pluginIndex,
+		ro.DRADriverName,
+		memoryStore,
+		deviceConfigurators,
+	)
+
 	draDriver, err := driver.Start(
 		ctx,
 		ro.DRADriverName,
@@ -218,6 +227,13 @@ func (ro *runOptions) run(ctx context.Context) error {
 		err = deviceNetworkController.Run(ctx, 1)
 		if err != nil && err != context.Canceled && err != context.DeadlineExceeded {
 			klog.FromContext(ctx).Error(err, "failed to run device network controller")
+		}
+	}()
+
+	go func() {
+		err = nriPlugin.Run(ctx)
+		if err != nil && err != context.Canceled && err != context.DeadlineExceeded {
+			klog.FromContext(ctx).Error(err, "failed to run NRI plugin")
 		}
 	}()
 
