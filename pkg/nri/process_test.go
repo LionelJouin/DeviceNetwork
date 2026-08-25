@@ -25,6 +25,7 @@ import (
 	"github.com/lioneljouin/devicenetwork/apis/v1alpha1"
 	"github.com/lioneljouin/devicenetwork/pkg/configurators"
 	"github.com/lioneljouin/devicenetwork/pkg/host"
+	"github.com/lioneljouin/devicenetwork/pkg/status"
 	resourcev1 "k8s.io/api/resource/v1"
 	kruntime "k8s.io/apimachinery/pkg/runtime"
 )
@@ -100,8 +101,8 @@ func deviceStatusClaim(driver string, raw []byte) *resourcev1.ResourceClaim {
 // the given driver selecting the given device type. A nil deviceType
 // simulates a status whose device type was never set.
 func claimWithDeviceType(driver string, deviceType *v1alpha1.DeviceType) *resourcev1.ResourceClaim {
-	raw, _ := json.Marshal(&v1alpha1.ResourceClaimDeviceStatusData{
-		DeviceType: deviceType,
+	raw, _ := json.Marshal(&status.ResourceClaimDeviceStatusData{
+		DeviceConfiguration: &v1alpha1.DeviceConfiguration{DeviceType: deviceType},
 	})
 
 	return deviceStatusClaim(driver, raw)

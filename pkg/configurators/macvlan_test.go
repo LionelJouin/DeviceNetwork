@@ -27,6 +27,7 @@ import (
 	"github.com/lioneljouin/devicenetwork/apis/v1alpha1"
 	"github.com/lioneljouin/devicenetwork/pkg/configurators"
 	"github.com/lioneljouin/devicenetwork/pkg/host"
+	"github.com/lioneljouin/devicenetwork/pkg/status"
 	"github.com/vishvananda/netlink"
 	"github.com/vishvananda/netns"
 	resourcev1 "k8s.io/api/resource/v1"
@@ -61,12 +62,15 @@ func TestMacvlan_Allocate(t *testing.T) {
 		{
 			name:                  "default configuration",
 			hostDevice:            &host.Device{Spec: host.DeviceSpec{InterfaceName: "net1"}},
-			deviceConfiguration:   &v1alpha1.DeviceConfiguration{DeviceType: &deviceType},
+			deviceConfiguration:   &v1alpha1.DeviceConfiguration{DeviceType: &deviceType, Macvlan: &v1alpha1.Macvlan{Mode: ptr.To(v1alpha1.MacvlanModeBridge)}},
 			allocatedDeviceStatus: device0,
 			want: func() *resourcev1.AllocatedDeviceStatus {
 				allocatedDeviceStatus := device0.DeepCopy()
-				allocatedDeviceStatus.Data = getRawExtension(&v1alpha1.ResourceClaimDeviceStatusData{
-					Macvlan: &v1alpha1.MacvlanStatus{ParentName: "net1", ParentIndex: 0, Mode: int(netlink.MACVLAN_MODE_BRIDGE)},
+				allocatedDeviceStatus.Data = getRawExtension(&status.ResourceClaimDeviceStatusData{
+					DeviceConfiguration: &v1alpha1.DeviceConfiguration{
+						DeviceType: ptr.To(v1alpha1.DeviceTypeMacvlan), Macvlan: &v1alpha1.Macvlan{Mode: ptr.To(v1alpha1.MacvlanModeBridge)},
+					},
+					Device: &host.Device{Spec: host.DeviceSpec{InterfaceName: "net1", InterfaceIndex: 0}},
 				})
 				return allocatedDeviceStatus
 			}(),
@@ -93,7 +97,7 @@ func TestMacvlan_Allocate(t *testing.T) {
 	}
 }
 
-func getRawExtension(resourceClaimDeviceStatusData *v1alpha1.ResourceClaimDeviceStatusData) *kruntime.RawExtension {
+func getRawExtension(resourceClaimDeviceStatusData *status.ResourceClaimDeviceStatusData) *kruntime.RawExtension {
 	resultBytes, _ := json.Marshal(resourceClaimDeviceStatusData)
 	return &kruntime.RawExtension{
 		Raw: resultBytes,
@@ -263,8 +267,11 @@ func TestMacvlan_Configure(t *testing.T) {
 			podNetworkNamespace: podNSPath,
 			allocatedDeviceStatus: &resourcev1.AllocatedDeviceStatus{
 				Driver: "devicenetwork.io", Pool: "pool0", Device: "device0", ShareID: ptr.To("sharedID0"),
-				Data: getRawExtension(&v1alpha1.ResourceClaimDeviceStatusData{
-					Macvlan: &v1alpha1.MacvlanStatus{ParentName: "dummy0", ParentIndex: parentIndex, Mode: int(netlink.MACVLAN_MODE_BRIDGE)},
+				Data: getRawExtension(&status.ResourceClaimDeviceStatusData{
+					DeviceConfiguration: &v1alpha1.DeviceConfiguration{
+						DeviceType: ptr.To(v1alpha1.DeviceTypeMacvlan), Macvlan: &v1alpha1.Macvlan{Mode: ptr.To(v1alpha1.MacvlanModeBridge)},
+					},
+					Device: &host.Device{Spec: host.DeviceSpec{InterfaceName: "dummy0", InterfaceIndex: parentIndex}},
 				}),
 				NetworkData: &resourcev1.NetworkDeviceData{
 					InterfaceName: "macvlan1", HardwareAddress: "00:01:ec:84:fb:51", IPs: []string{"192.168.1.100/24", "fd00:db8:1::100/64"},
@@ -273,8 +280,11 @@ func TestMacvlan_Configure(t *testing.T) {
 			},
 			want: &resourcev1.AllocatedDeviceStatus{
 				Driver: "devicenetwork.io", Pool: "pool0", Device: "device0", ShareID: ptr.To("sharedID0"),
-				Data: getRawExtension(&v1alpha1.ResourceClaimDeviceStatusData{
-					Macvlan: &v1alpha1.MacvlanStatus{ParentName: "dummy0", ParentIndex: parentIndex, Mode: int(netlink.MACVLAN_MODE_BRIDGE)},
+				Data: getRawExtension(&status.ResourceClaimDeviceStatusData{
+					DeviceConfiguration: &v1alpha1.DeviceConfiguration{
+						DeviceType: ptr.To(v1alpha1.DeviceTypeMacvlan), Macvlan: &v1alpha1.Macvlan{Mode: ptr.To(v1alpha1.MacvlanModeBridge)},
+					},
+					Device: &host.Device{Spec: host.DeviceSpec{InterfaceName: "dummy0", InterfaceIndex: parentIndex}},
 				}),
 				NetworkData: &resourcev1.NetworkDeviceData{
 					InterfaceName: "macvlan1", HardwareAddress: "00:01:ec:84:fb:51", IPs: []string{"192.168.1.100/24", "fd00:db8:1::100/64"},
@@ -288,8 +298,11 @@ func TestMacvlan_Configure(t *testing.T) {
 			podNetworkNamespace: "/var/run/netns/nonexistent",
 			allocatedDeviceStatus: &resourcev1.AllocatedDeviceStatus{
 				Driver: "devicenetwork.io", Pool: "pool0", Device: "device0",
-				Data: getRawExtension(&v1alpha1.ResourceClaimDeviceStatusData{
-					Macvlan: &v1alpha1.MacvlanStatus{ParentName: "dummy0", ParentIndex: parentIndex, Mode: int(netlink.MACVLAN_MODE_BRIDGE)},
+				Data: getRawExtension(&status.ResourceClaimDeviceStatusData{
+					DeviceConfiguration: &v1alpha1.DeviceConfiguration{
+						DeviceType: ptr.To(v1alpha1.DeviceTypeMacvlan), Macvlan: &v1alpha1.Macvlan{Mode: ptr.To(v1alpha1.MacvlanModeBridge)},
+					},
+					Device: &host.Device{Spec: host.DeviceSpec{InterfaceName: "dummy0", InterfaceIndex: parentIndex}},
 				}),
 				NetworkData: &resourcev1.NetworkDeviceData{InterfaceName: "macvlan1"},
 				Conditions:  []metav1.Condition{},

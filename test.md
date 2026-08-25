@@ -11,6 +11,12 @@ docker exec -it kind-worker ip link add dummy0 type dummy
 docker exec -it kind-worker ip link set dummy0 up
 
 
+docker exec -it kind-worker ip link add br0 type bridge
+docker exec -it kind-worker ip link set br0 up
+docker exec -it kind-worker ip link add dummy1 type dummy
+docker exec -it kind-worker ip link set dummy1 master br0
+docker exec -it kind-worker ip link set dummy1 up
+
 
 
 kubectl apply -f ./deployment

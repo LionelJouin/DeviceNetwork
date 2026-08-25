@@ -23,7 +23,7 @@ verify:
 
 .PHONY: test
 test:
-	sudo env "PATH=$$PATH" go test ./pkg/... ./cmd/... ./apis/... -race -count=1
+	sudo env "PATH=$$PATH" go test ./pkg/... ./cmd/... ./apis/... -race -count=1 -cover
 
 .PHONY: .build-image
 build-image:

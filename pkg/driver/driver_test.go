@@ -94,7 +94,7 @@ func TestDriver_PrepareResourceClaims(t *testing.T) {
 		},
 	}
 
-	hostDev := &host.Device{ObjectMeta: metav1.ObjectMeta{Name: "eth0"}}
+	hostDev := &host.Device{ObjectMeta: metav1.ObjectMeta{Name: "eth0"}, Spec: host.DeviceSpec{InterfaceName: "eth0"}}
 
 	makeClaim := func(uid types.UID, reservations int, results []resourcev1.DeviceRequestAllocationResult) *resourcev1.ResourceClaim {
 		claim := &resourcev1.ResourceClaim{

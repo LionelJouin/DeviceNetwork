@@ -25,6 +25,7 @@ import (
 	"github.com/containerd/nri/pkg/api"
 	"github.com/lioneljouin/devicenetwork/apis/v1alpha1"
 	"github.com/lioneljouin/devicenetwork/pkg/configurators"
+	"github.com/lioneljouin/devicenetwork/pkg/status"
 	resourcev1 "k8s.io/api/resource/v1"
 	"k8s.io/klog/v2"
 )
@@ -134,29 +135,27 @@ func (cp *configurationProcess) configureResourceClaim(ctx context.Context, clai
 			continue
 		}
 
-		resourceClaimDeviceStatusData := &v1alpha1.ResourceClaimDeviceStatusData{}
+		resourceClaimDeviceStatusData := &status.ResourceClaimDeviceStatusData{}
 		err := json.Unmarshal(deviceStatus.Data.Raw, resourceClaimDeviceStatusData)
 		if err != nil {
 			return fmt.Errorf("failed to unmarshal allocated device status data: %v", err)
 		}
 
-		if resourceClaimDeviceStatusData.DeviceType == nil {
-			return fmt.Errorf("device type is nil in resource claim device status data")
+		if resourceClaimDeviceStatusData.DeviceConfiguration == nil {
+			return fmt.Errorf("device configuration is nil in resource claim device status data")
 		}
 
-		configuration, exists := cp.deviceConfigurators[*resourceClaimDeviceStatusData.DeviceType]
+		deviceType := v1alpha1.GetDeviceType(*resourceClaimDeviceStatusData.DeviceConfiguration)
+
+		configuration, exists := cp.deviceConfigurators[deviceType]
 		if !exists {
-			return fmt.Errorf("no configurator found for device type: %v", *resourceClaimDeviceStatusData.DeviceType)
+			return fmt.Errorf("no configurator found for device type: %v", deviceType)
 		}
 
 		_, err = configuration.Configure(ctx, cp.podNetworkNamespace, &deviceStatus)
 		if err != nil {
 			return fmt.Errorf("failed to configure device: %v", err)
 		}
-
-		// Implement the logic to configure the device based on the claim and driver.
-		// This might involve interacting with the device plugin, setting up the device, etc.
-		// For now, we'll just simulate a successful configuration.
 	}
 	return nil
 }

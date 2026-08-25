@@ -23,6 +23,7 @@ import (
 
 	"github.com/lioneljouin/devicenetwork/apis/v1alpha1"
 	"github.com/lioneljouin/devicenetwork/pkg/host"
+	"github.com/lioneljouin/devicenetwork/pkg/status"
 	"github.com/vishvananda/netlink"
 	"github.com/vishvananda/netns"
 	resourcev1 "k8s.io/api/resource/v1"
@@ -68,7 +69,7 @@ func (mcvln *Macvlan) Allocate(
 		}
 	}
 
-	resourceClaimDeviceStatusData := &v1alpha1.ResourceClaimDeviceStatusData{}
+	resourceClaimDeviceStatusData := &status.ResourceClaimDeviceStatusData{}
 	if allocatedDeviceStatusRes.Data != nil && allocatedDeviceStatusRes.Data.Raw != nil {
 		err := json.Unmarshal(allocatedDeviceStatusRes.Data.Raw, resourceClaimDeviceStatusData)
 		if err != nil {
@@ -76,26 +77,8 @@ func (mcvln *Macvlan) Allocate(
 		}
 	}
 
-	macvlanConfig := v1alpha1.GetMacvlan(*deviceConfiguration)
-
-	macvlanModeMap := map[v1alpha1.MacvlanMode]netlink.MacvlanMode{
-		v1alpha1.MacvlanModeBridge:   netlink.MACVLAN_MODE_BRIDGE,
-		v1alpha1.MacvlanModePrivate:  netlink.MACVLAN_MODE_PRIVATE,
-		v1alpha1.MacvlanModeVepa:     netlink.MACVLAN_MODE_VEPA,
-		v1alpha1.MacvlanModePassthru: netlink.MACVLAN_MODE_PASSTHRU,
-		v1alpha1.MacvlanModeSource:   netlink.MACVLAN_MODE_SOURCE,
-	}
-
-	mode, ok := macvlanModeMap[*macvlanConfig.Mode]
-	if !ok {
-		return nil, fmt.Errorf("invalid macvlan mode %q", *macvlanConfig.Mode)
-	}
-
-	resourceClaimDeviceStatusData.Macvlan = &v1alpha1.MacvlanStatus{
-		ParentName:  hostDevice.Spec.InterfaceName,
-		ParentIndex: hostDevice.Spec.InterfaceIndex,
-		Mode:        int(mode),
-	}
+	resourceClaimDeviceStatusData.Device = hostDevice.DeepCopy()
+	resourceClaimDeviceStatusData.DeviceConfiguration = deviceConfiguration.DeepCopy()
 
 	resultBytes, err := json.Marshal(resourceClaimDeviceStatusData)
 	if err != nil {
@@ -160,14 +143,22 @@ func (mcvln *Macvlan) Configure(
 	}
 	allocatedDeviceStatusRes := allocatedDeviceStatus.DeepCopy()
 
-	resourceClaimDeviceStatusData := &v1alpha1.ResourceClaimDeviceStatusData{}
+	resourceClaimDeviceStatusData := &status.ResourceClaimDeviceStatusData{}
 	err := json.Unmarshal(allocatedDeviceStatus.Data.Raw, resourceClaimDeviceStatusData)
 	if err != nil {
 		return nil, fmt.Errorf("failed to unmarshal allocated device status data: %v", err)
 	}
 
-	if resourceClaimDeviceStatusData.Macvlan == nil {
-		return nil, fmt.Errorf("allocated device status data does not contain macvlan information")
+	if resourceClaimDeviceStatusData.Device == nil {
+		return nil, fmt.Errorf("allocated device status data does not contain device information")
+	}
+
+	if resourceClaimDeviceStatusData.DeviceConfiguration == nil {
+		return nil, fmt.Errorf("allocated device status data does not contain device configuration information")
+	}
+
+	if v1alpha1.GetDeviceType(*resourceClaimDeviceStatusData.DeviceConfiguration) != v1alpha1.DeviceTypeMacvlan {
+		return nil, fmt.Errorf("allocated device status data does not contain macvlan device configuration information")
 	}
 
 	nsHandle, err := netns.GetFromPath(podNetworkNamespace)
@@ -185,14 +176,30 @@ func (mcvln *Macvlan) Configure(
 	// 	return nil, fmt.Errorf("failed to parse hardware address %q: %v", allocatedDeviceStatus.NetworkData.HardwareAddress, err)
 	// }
 
+	deviceConfiguration := resourceClaimDeviceStatusData.DeviceConfiguration
+	macvlanConfig := v1alpha1.GetMacvlan(*deviceConfiguration)
+
+	macvlanModeMap := map[v1alpha1.MacvlanMode]netlink.MacvlanMode{
+		v1alpha1.MacvlanModeBridge:   netlink.MACVLAN_MODE_BRIDGE,
+		v1alpha1.MacvlanModePrivate:  netlink.MACVLAN_MODE_PRIVATE,
+		v1alpha1.MacvlanModeVepa:     netlink.MACVLAN_MODE_VEPA,
+		v1alpha1.MacvlanModePassthru: netlink.MACVLAN_MODE_PASSTHRU,
+		v1alpha1.MacvlanModeSource:   netlink.MACVLAN_MODE_SOURCE,
+	}
+
+	mode, ok := macvlanModeMap[*macvlanConfig.Mode]
+	if !ok {
+		return nil, fmt.Errorf("invalid macvlan mode %q", *macvlanConfig.Mode)
+	}
+
 	linkAttrs := netlink.NewLinkAttrs()
 	linkAttrs.Name = allocatedDeviceStatus.NetworkData.InterfaceName
 	// linkAttrs.HardwareAddr = hwAddr
-	linkAttrs.ParentIndex = resourceClaimDeviceStatusData.Macvlan.ParentIndex
+	linkAttrs.ParentIndex = resourceClaimDeviceStatusData.Device.Spec.InterfaceIndex
 	linkAttrs.Namespace = netlink.NsFd(nsHandle)
 	macvlan := netlink.Macvlan{
 		LinkAttrs: linkAttrs,
-		Mode:      netlink.MacvlanMode(resourceClaimDeviceStatusData.Macvlan.Mode),
+		Mode:      mode,
 	}
 
 	err = netlink.LinkAdd(&macvlan)

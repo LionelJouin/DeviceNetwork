@@ -128,32 +128,36 @@ func (dnr *DeviceNetworkReconciler) getResources(
 				continue
 			}
 
+			deviceForDeviceConfiguration := map[string]*host.Device{} // key: device name, value: device
 			for _, selector := range deviceConfiguration.DeviceSelectors {
 				devices, ok := deviceForSelector[selector]
 				if !ok {
 					continue
 				}
-
 				for _, dvc := range devices {
-					// check if the device is already configured
-					resourceDevice, err := configurator.ExposedDevice(ctx, dvc, nil)
-					if err != nil || resourceDevice == nil {
-						continue // todo
-					}
-
-					resourceDevice.Name = DeviceName(deviceNetwork.Name, deviceConfiguration.Name, dvc.Name)
-					if resourceDevice.Attributes == nil {
-						resourceDevice.Attributes = map[resourcev1.QualifiedName]resourcev1.DeviceAttribute{}
-					}
-
-					resourceDevice.Attributes[resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributeDeviceType)] = resourcev1.DeviceAttribute{StringValue: (*string)(&deviceType)}
-					resourceDevice.Attributes[resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributePodNetwork)] = resourcev1.DeviceAttribute{StringValue: &deviceNetwork.Name}
-					resourceDevice.Attributes[resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributeNetworkKind)] = resourcev1.DeviceAttribute{StringValue: &dnr.networkKind}
-					resourceDevice.Attributes[resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributeDeviceConfiguration)] = resourcev1.DeviceAttribute{StringValue: &deviceConfiguration.Name}
-					resourceDevice.Attributes[resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributeHostDeviceName)] = resourcev1.DeviceAttribute{StringValue: &dvc.Name}
-
-					resourceDevices = append(resourceDevices, *resourceDevice)
+					deviceForDeviceConfiguration[dvc.Name] = dvc
 				}
+			}
+
+			for _, dvc := range deviceForDeviceConfiguration {
+				// check if the device is already configured
+				resourceDevice, err := configurator.ExposedDevice(ctx, dvc, nil)
+				if err != nil || resourceDevice == nil {
+					continue // todo
+				}
+
+				resourceDevice.Name = DeviceName(deviceNetwork.Name, deviceConfiguration.Name, dvc.Name)
+				if resourceDevice.Attributes == nil {
+					resourceDevice.Attributes = map[resourcev1.QualifiedName]resourcev1.DeviceAttribute{}
+				}
+
+				resourceDevice.Attributes[resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributeDeviceType)] = resourcev1.DeviceAttribute{StringValue: (*string)(&deviceType)}
+				resourceDevice.Attributes[resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributePodNetwork)] = resourcev1.DeviceAttribute{StringValue: &deviceNetwork.Name}
+				resourceDevice.Attributes[resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributeNetworkKind)] = resourcev1.DeviceAttribute{StringValue: &dnr.networkKind}
+				resourceDevice.Attributes[resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributeDeviceConfiguration)] = resourcev1.DeviceAttribute{StringValue: &deviceConfiguration.Name}
+				resourceDevice.Attributes[resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributeHostDeviceName)] = resourcev1.DeviceAttribute{StringValue: &dvc.Name}
+
+				resourceDevices = append(resourceDevices, *resourceDevice)
 			}
 		}
 	}

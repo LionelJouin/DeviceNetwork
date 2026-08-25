@@ -319,6 +319,145 @@ func TestDeviceNetworkReconciler_Reconcile(t *testing.T) {
 				},
 			},
 		},
+		{
+			// A single device matched by two DeviceSelectors, each referenced by a
+			// different DeviceConfiguration, is currently exposed once per
+			// DeviceConfiguration.
+			name:        "device matched by multiple selectors is configured multiple times",
+			nodeName:    "node-a",
+			networkKind: networkKind,
+			nodeLister: newNodeLister(&corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{Name: "node-a"},
+			}),
+			deviceNetworkLister: newDeviceNetworkLister(&v1alpha1.DeviceNetwork{
+				ObjectMeta: metav1.ObjectMeta{Name: "net1"},
+				Spec: v1alpha1.DeviceNetworkSpec{
+					DeviceSelectors: []v1alpha1.DeviceSelector{
+						{Name: "sel-a"},
+						{Name: "sel-b"},
+					},
+					DeviceConfigurations: []v1alpha1.DeviceConfiguration{
+						{
+							Name:            "cfg-a",
+							DeviceSelectors: []string{"sel-a"},
+							DeviceType:      &macvlanType,
+						},
+						{
+							Name:            "cfg-b",
+							DeviceSelectors: []string{"sel-b"},
+							DeviceType:      &macvlanType,
+						},
+					},
+				},
+			}),
+			publishResourcesFunc: func(_ context.Context, dr resourceslice.DriverResources) error {
+				return nil
+			},
+			deviceCache: newDeviceCache(t, &host.Device{
+				ObjectMeta: metav1.ObjectMeta{Name: "eth0"},
+				Spec:       host.DeviceSpec{InterfaceName: "eth0", InterfaceIndex: 2},
+			}),
+			deviceConfigurators: map[v1alpha1.DeviceType]configurators.Configurator{
+				v1alpha1.DeviceTypeMacvlan: &fakeConfigurator{},
+			},
+			wantErr: false,
+			wantResources: func() *resourceslice.DriverResources {
+				deviceType := string(v1alpha1.DeviceTypeMacvlan)
+				podNetwork := "net1"
+				hostDevName := "eth0"
+				cfgA := "cfg-a"
+				cfgB := "cfg-b"
+				return &resourceslice.DriverResources{
+					Pools: map[string]resourceslice.Pool{
+						"node-a": {Slices: []resourceslice.Slice{{
+							Devices: []resourcev1.Device{
+								{
+									Name: "net1-cfg-a-eth0",
+									Attributes: map[resourcev1.QualifiedName]resourcev1.DeviceAttribute{
+										resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributeDeviceType):          {StringValue: &deviceType},
+										resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributePodNetwork):          {StringValue: &podNetwork},
+										resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributeNetworkKind):         {StringValue: &networkKind},
+										resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributeDeviceConfiguration): {StringValue: &cfgA},
+										resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributeHostDeviceName):      {StringValue: &hostDevName},
+									},
+								},
+								{
+									Name: "net1-cfg-b-eth0",
+									Attributes: map[resourcev1.QualifiedName]resourcev1.DeviceAttribute{
+										resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributeDeviceType):          {StringValue: &deviceType},
+										resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributePodNetwork):          {StringValue: &podNetwork},
+										resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributeNetworkKind):         {StringValue: &networkKind},
+										resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributeDeviceConfiguration): {StringValue: &cfgB},
+										resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributeHostDeviceName):      {StringValue: &hostDevName},
+									},
+								},
+							},
+						}}},
+					},
+				}
+			}(),
+		},
+		{
+			// A single device matched by two DeviceSelectors that are both
+			// referenced by the same DeviceConfiguration is currently exposed
+			// once.
+			name:        "device matched by multiple selectors in the same DeviceConfiguration",
+			nodeName:    "node-a",
+			networkKind: networkKind,
+			nodeLister: newNodeLister(&corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{Name: "node-a"},
+			}),
+			deviceNetworkLister: newDeviceNetworkLister(&v1alpha1.DeviceNetwork{
+				ObjectMeta: metav1.ObjectMeta{Name: "net1"},
+				Spec: v1alpha1.DeviceNetworkSpec{
+					DeviceSelectors: []v1alpha1.DeviceSelector{
+						{Name: "sel-a"},
+						{Name: "sel-b"},
+					},
+					DeviceConfigurations: []v1alpha1.DeviceConfiguration{
+						{
+							Name:            "cfg",
+							DeviceSelectors: []string{"sel-a", "sel-b"},
+							DeviceType:      &macvlanType,
+						},
+					},
+				},
+			}),
+			publishResourcesFunc: func(_ context.Context, dr resourceslice.DriverResources) error {
+				return nil
+			},
+			deviceCache: newDeviceCache(t, &host.Device{
+				ObjectMeta: metav1.ObjectMeta{Name: "eth0"},
+				Spec:       host.DeviceSpec{InterfaceName: "eth0", InterfaceIndex: 2},
+			}),
+			deviceConfigurators: map[v1alpha1.DeviceType]configurators.Configurator{
+				v1alpha1.DeviceTypeMacvlan: &fakeConfigurator{},
+			},
+			wantErr: false,
+			wantResources: func() *resourceslice.DriverResources {
+				deviceType := string(v1alpha1.DeviceTypeMacvlan)
+				podNetwork := "net1"
+				hostDevName := "eth0"
+				cfg := "cfg"
+				duplicateDevice := resourcev1.Device{
+					Name: "net1-cfg-eth0",
+					Attributes: map[resourcev1.QualifiedName]resourcev1.DeviceAttribute{
+						resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributeDeviceType):          {StringValue: &deviceType},
+						resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributePodNetwork):          {StringValue: &podNetwork},
+						resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributeNetworkKind):         {StringValue: &networkKind},
+						resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributeDeviceConfiguration): {StringValue: &cfg},
+						resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributeHostDeviceName):      {StringValue: &hostDevName},
+					},
+				}
+				return &resourceslice.DriverResources{
+					Pools: map[string]resourceslice.Pool{
+						"node-a": {Slices: []resourceslice.Slice{{
+							Devices: []resourcev1.Device{duplicateDevice},
+						}}},
+					},
+				}
+			}(),
+		},
 		// todo: test case with high limit of devices to ensure that the reconciler
 		//  can handle large numbers of devices without running into performance issues or timeouts.
 	}

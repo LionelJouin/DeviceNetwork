@@ -19,6 +19,7 @@ package nri
 import (
 	"context"
 	"fmt"
+	"sync"
 
 	"github.com/containerd/nri/pkg/api"
 	"github.com/containerd/nri/pkg/stub"
@@ -45,6 +46,7 @@ type Plugin struct {
 	deviceConfigurators    map[v1alpha1.DeviceType]configurators.Configurator
 	configurationProcesses map[types.UID]*configurationProcess
 	runContext             context.Context
+	mu                     sync.Mutex
 }
 
 func NewPlugin(
@@ -92,36 +94,32 @@ func (p *Plugin) RunPodSandbox(
 ) error {
 	klog.FromContext(ctx).Info("RunPodSandbox", "pod.Name", pod.Name, "pod.Namespace", pod.Namespace)
 
+	resourceClaims := p.podResourceStore.Get(types.UID(pod.Uid))
+	if len(resourceClaims) == 0 {
+		return nil
+	}
+
 	podNetworkNamespace := getNetworkNamespace(pod)
 	if podNetworkNamespace == "" {
 		return fmt.Errorf("error getting network namespace for pod '%s' in namespace '%s'", pod.Name, pod.Namespace)
 	}
 
-	_ = p.podResourceStore.Get(types.UID(pod.Uid))
-
 	process := newConfigurationProcess(
 		pod,
 		podNetworkNamespace,
-		p.podResourceStore.Get(types.UID(pod.Uid)),
+		resourceClaims,
 		p.driverName,
 		p.deviceConfigurators,
 	)
+
+	p.mu.Lock()
 	p.configurationProcesses[types.UID(pod.Uid)] = process
+	p.mu.Unlock()
 
 	go process.run(p.runContext)
 
 	return nil
 }
-
-// func (p *Plugin) CreateContainer(
-// 	ctx context.Context,
-// 	pod *api.PodSandbox,
-// 	ctr *api.Container,
-// ) (*api.ContainerAdjustment, []*api.ContainerUpdate, error) {
-// 	klog.FromContext(ctx).Info("CreateContainer", "pod.Name", pod.Name, "pod.Namespace", pod.Namespace, "ctr.Name", ctr.Name, "ctr.Id", ctr.Id)
-
-// 	return nil, nil, nil
-// }
 
 // StartContainer is called when a container is started.
 // It checks if the device networks are all configured before allowing the container to start.
@@ -132,6 +130,9 @@ func (p *Plugin) StartContainer(
 	ctr *api.Container,
 ) error {
 	klog.FromContext(ctx).Info("StartContainer", "pod.Name", pod.Name, "pod.Namespace", pod.Namespace, "ctr.Name", ctr.Name, "ctr.Id", ctr.Id)
+
+	p.mu.Lock()
+	defer p.mu.Unlock()
 
 	process, exists := p.configurationProcesses[types.UID(pod.Uid)]
 	if !exists {
@@ -162,6 +163,9 @@ func (p *Plugin) RemovePodSandbox(
 	pod *api.PodSandbox,
 ) error {
 	klog.FromContext(ctx).Info("RemovePodSandbox", "pod.Name", pod.Name, "pod.Namespace", pod.Namespace)
+
+	p.mu.Lock()
+	defer p.mu.Unlock()
 
 	process, exists := p.configurationProcesses[types.UID(pod.Uid)]
 	if !exists {
