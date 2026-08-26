@@ -67,6 +67,10 @@ func (f *fakeConfigurator) Release(_ context.Context, _ string, _ *resourcev1.Al
 	return nil, nil
 }
 
+func (f *fakeConfigurator) IsSupported(_ context.Context, _ *host.Device, _ *v1alpha1.DeviceConfiguration) (bool, error) {
+	return true, nil
+}
+
 func newTestDriver(
 	t *testing.T,
 	kubeClient kubernetes.Interface,

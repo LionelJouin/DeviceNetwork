@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2026
+Copyright 2026 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -26,11 +26,13 @@ import (
 	"github.com/lioneljouin/devicenetwork/pkg/host"
 	corev1 "k8s.io/api/core/v1"
 	resourcev1 "k8s.io/api/resource/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/labels"
 	corev1listers "k8s.io/client-go/listers/core/v1"
 	schedulingcorev1 "k8s.io/component-helpers/scheduling/corev1"
 	"k8s.io/dynamic-resource-allocation/resourceslice"
 	"k8s.io/klog/v2"
+	"k8s.io/utils/set"
 )
 
 // PublishResources is a function type to advertise resources.
@@ -107,6 +109,8 @@ func (dnr *DeviceNetworkReconciler) getResources(
 ) resourceslice.DriverResources {
 	resourceDevices := []resourcev1.Device{}
 
+	counterSetDevices := set.New[string]()
+
 	for _, deviceNetwork := range deviceNetworks {
 		deviceForSelector := map[string][]*host.Device{}
 		for _, deviceSelector := range deviceNetwork.Spec.DeviceSelectors {
@@ -140,7 +144,15 @@ func (dnr *DeviceNetworkReconciler) getResources(
 			}
 
 			for _, dvc := range deviceForDeviceConfiguration {
-				// check if the device is already configured
+				isSupported, err := configurator.IsSupported(ctx, dvc, &deviceConfiguration)
+				if err != nil {
+					continue // todo
+				}
+
+				if !isSupported {
+					continue
+				}
+
 				resourceDevice, err := configurator.ExposedDevice(ctx, dvc, nil)
 				if err != nil || resourceDevice == nil {
 					continue // todo
@@ -158,17 +170,28 @@ func (dnr *DeviceNetworkReconciler) getResources(
 				resourceDevice.Attributes[resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributeHostDeviceName)] = resourcev1.DeviceAttribute{StringValue: &dvc.Name}
 
 				resourceDevices = append(resourceDevices, *resourceDevice)
+				counterSetDevices.Insert(dvc.Name)
 			}
 		}
 	}
 
+	sharedCounters := []resourcev1.CounterSet{}
+	for _, deviceName := range counterSetDevices.UnsortedList() {
+		sharedCounters = append(sharedCounters, resourcev1.CounterSet{
+			Name: deviceName,
+			Counters: map[string]resourcev1.Counter{
+				"mutual-exclusion": {Value: resource.MustParse("65536")},
+			},
+		})
+	}
+
 	driverResources := resourceslice.DriverResources{
 		Pools: map[string]resourceslice.Pool{
-			currentNode.Name: {Slices: []resourceslice.Slice{
-				{
-					Devices: resourceDevices,
-				},
-			}},
+			currentNode.Name: {
+				Slices: []resourceslice.Slice{
+					{Devices: resourceDevices},
+					{SharedCounters: sharedCounters},
+				}},
 		},
 	}
 

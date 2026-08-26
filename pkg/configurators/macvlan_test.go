@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2026
+Copyright 2026 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -116,7 +116,7 @@ func TestMacvlan_ExposedDevice(t *testing.T) {
 	}{
 		{
 			name:       "default configuration",
-			hostDevice: nil,
+			hostDevice: &host.Device{ObjectMeta: metav1.ObjectMeta{Name: "eth0"}},
 			device:     nil,
 			want: &resourcev1.Device{
 				Capacity: map[resourcev1.QualifiedName]resourcev1.DeviceCapacity{
@@ -130,12 +130,15 @@ func TestMacvlan_ExposedDevice(t *testing.T) {
 				},
 				Attributes:               map[resourcev1.QualifiedName]resourcev1.DeviceAttribute{},
 				AllowMultipleAllocations: ptr.To(true),
+				ConsumesCounters: []resourcev1.DeviceCounterConsumption{
+					{CounterSet: "eth0", Counters: map[string]resourcev1.Counter{"mutual-exclusion": {Value: one}}},
+				},
 			},
 			wantErr: false,
 		},
 		{
 			name:       "existing device",
-			hostDevice: nil,
+			hostDevice: &host.Device{ObjectMeta: metav1.ObjectMeta{Name: "eth0"}},
 			device: &resourcev1.Device{
 				Capacity: map[resourcev1.QualifiedName]resourcev1.DeviceCapacity{
 					resourcev1.QualifiedName(v1alpha1.NetworkInterfaceCapacityMaxVirtualInterfaces): {
@@ -161,8 +164,17 @@ func TestMacvlan_ExposedDevice(t *testing.T) {
 				},
 				Attributes:               map[resourcev1.QualifiedName]resourcev1.DeviceAttribute{},
 				AllowMultipleAllocations: ptr.To(true),
+				ConsumesCounters: []resourcev1.DeviceCounterConsumption{
+					{CounterSet: "eth0", Counters: map[string]resourcev1.Counter{"mutual-exclusion": {Value: one}}},
+				},
 			},
 			wantErr: false,
+		},
+		{
+			name:       "nil hostDevice",
+			hostDevice: nil,
+			device:     nil,
+			wantErr:    true,
 		},
 	}
 	for _, tt := range tests {
@@ -352,6 +364,172 @@ func TestMacvlan_Configure(t *testing.T) {
 			}
 			if _, ok := link.(*netlink.Macvlan); !ok {
 				t.Fatalf("link %q is %T, want *netlink.Macvlan", tt.allocatedDeviceStatus.NetworkData.InterfaceName, link)
+			}
+		})
+	}
+}
+
+func TestMacvlan_IsSupported(t *testing.T) {
+	tests := []struct {
+		name                string
+		hostDevice          *host.Device
+		deviceConfiguration *v1alpha1.DeviceConfiguration
+		want                bool
+		wantErr             bool
+		requiresRoot        bool
+	}{
+		{
+			name:                "hostDevice is nil",
+			hostDevice:          nil,
+			deviceConfiguration: &v1alpha1.DeviceConfiguration{DeviceType: ptr.To(v1alpha1.DeviceTypeMacvlan)},
+			wantErr:             true,
+		},
+		{
+			name:                "deviceConfiguration is nil",
+			hostDevice:          &host.Device{Spec: host.DeviceSpec{InterfaceName: "eth0"}},
+			deviceConfiguration: nil,
+			wantErr:             true,
+		},
+		{
+			name:                "device type is not macvlan",
+			hostDevice:          &host.Device{Spec: host.DeviceSpec{InterfaceName: "eth0"}},
+			deviceConfiguration: &v1alpha1.DeviceConfiguration{DeviceType: ptr.To(v1alpha1.DeviceTypeHostDevice)},
+			want:                false,
+		},
+		{
+			name:       "invalid macvlan mode",
+			hostDevice: &host.Device{Spec: host.DeviceSpec{InterfaceName: "eth0"}},
+			deviceConfiguration: &v1alpha1.DeviceConfiguration{
+				DeviceType: ptr.To(v1alpha1.DeviceTypeMacvlan),
+				Macvlan:    &v1alpha1.Macvlan{Mode: ptr.To(v1alpha1.MacvlanMode("invalid"))},
+			},
+			want: false,
+		},
+		{
+			name:       "host device does not exist",
+			hostDevice: &host.Device{Spec: host.DeviceSpec{InterfaceName: "dn-test-missing"}},
+			deviceConfiguration: &v1alpha1.DeviceConfiguration{
+				DeviceType: ptr.To(v1alpha1.DeviceTypeMacvlan),
+				Macvlan:    &v1alpha1.Macvlan{Mode: ptr.To(v1alpha1.MacvlanModeBridge)},
+			},
+			wantErr: true,
+		},
+		{
+			name:       "lower device is not ethernet",
+			hostDevice: &host.Device{Spec: host.DeviceSpec{InterfaceName: "lo"}},
+			deviceConfiguration: &v1alpha1.DeviceConfiguration{
+				DeviceType: ptr.To(v1alpha1.DeviceTypeMacvlan),
+				Macvlan:    &v1alpha1.Macvlan{Mode: ptr.To(v1alpha1.MacvlanModeBridge)},
+			},
+			want: false,
+		},
+		{
+			name:       "device is enslaved to a bridge",
+			hostDevice: &host.Device{Spec: host.DeviceSpec{InterfaceName: "dn-test-slave"}},
+			deviceConfiguration: &v1alpha1.DeviceConfiguration{
+				DeviceType: ptr.To(v1alpha1.DeviceTypeMacvlan),
+				Macvlan:    &v1alpha1.Macvlan{Mode: ptr.To(v1alpha1.MacvlanModeBridge)},
+			},
+			want:         false,
+			requiresRoot: true,
+		},
+		{
+			name:       "ethernet device is supported",
+			hostDevice: &host.Device{Spec: host.DeviceSpec{InterfaceName: "dn-test-eth"}},
+			deviceConfiguration: &v1alpha1.DeviceConfiguration{
+				DeviceType: ptr.To(v1alpha1.DeviceTypeMacvlan),
+				Macvlan:    &v1alpha1.Macvlan{Mode: ptr.To(v1alpha1.MacvlanModeBridge)},
+			},
+			want:         true,
+			requiresRoot: true,
+		},
+	}
+
+	// The dn-test-eth/dn-test-slave/dn-test-br0 interfaces are only needed by
+	// the requiresRoot cases; set them up in an isolated netns so the real
+	// host is never touched.
+	var testNS netns.NsHandle
+	if os.Getuid() == 0 {
+		runtime.LockOSThread()
+		defer runtime.UnlockOSThread()
+
+		origNS, err := netns.Get()
+		if err != nil {
+			t.Fatalf("failed to get current netns: %v", err)
+		}
+		t.Cleanup(func() {
+			if err := netns.Set(origNS); err != nil {
+				t.Errorf("failed to restore netns: %v", err)
+			}
+			if err := origNS.Close(); err != nil {
+				t.Errorf("failed to close original netns: %v", err)
+			}
+		})
+
+		testNS, err = netns.New()
+		if err != nil {
+			t.Fatalf("failed to create test netns: %v", err)
+		}
+		t.Cleanup(func() {
+			if err := testNS.Close(); err != nil {
+				t.Errorf("failed to close test netns: %v", err)
+			}
+		})
+
+		eth := &netlink.Dummy{LinkAttrs: netlink.LinkAttrs{Name: "dn-test-eth"}}
+		if err := netlink.LinkAdd(eth); err != nil {
+			t.Fatalf("failed to add dummy interface: %v", err)
+		}
+
+		bridge := &netlink.Bridge{LinkAttrs: netlink.LinkAttrs{Name: "dn-test-br0"}}
+		if err := netlink.LinkAdd(bridge); err != nil {
+			t.Fatalf("failed to add bridge: %v", err)
+		}
+
+		slave := &netlink.Dummy{LinkAttrs: netlink.LinkAttrs{Name: "dn-test-slave"}}
+		if err := netlink.LinkAdd(slave); err != nil {
+			t.Fatalf("failed to add slave interface: %v", err)
+		}
+		if err := netlink.LinkSetMaster(slave, bridge); err != nil {
+			t.Fatalf("failed to enslave interface to bridge: %v", err)
+		}
+
+		// Switch this thread back to the original ns; each requiresRoot
+		// subtest below switches into testNS for itself since t.Run executes
+		// subtests on a new goroutine, which is not guaranteed to run on the
+		// OS thread that was just switched into testNS above.
+		if err := netns.Set(origNS); err != nil {
+			t.Fatalf("failed to switch back to the original netns: %v", err)
+		}
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.requiresRoot {
+				if os.Getuid() != 0 {
+					t.Skip("requires root privileges (network namespace and link creation)")
+				}
+
+				runtime.LockOSThread()
+				defer runtime.UnlockOSThread()
+				if err := netns.Set(testNS); err != nil {
+					t.Fatalf("failed to set netns: %v", err)
+				}
+			}
+
+			var mcvln configurators.Macvlan
+			got, gotErr := mcvln.IsSupported(t.Context(), tt.hostDevice, tt.deviceConfiguration)
+			if gotErr != nil {
+				if !tt.wantErr {
+					t.Errorf("IsSupported() failed: %v", gotErr)
+				}
+				return
+			}
+			if tt.wantErr {
+				t.Fatal("IsSupported() succeeded unexpectedly")
+			}
+			if got != tt.want {
+				t.Errorf("IsSupported() = %v, want %v", got, tt.want)
 			}
 		})
 	}

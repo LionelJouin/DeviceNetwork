@@ -1,5 +1,5 @@
 /*
-Copyright 2026
+Copyright 2026 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -38,6 +38,14 @@ type fakeConfigurator struct {
 	configureErr   error
 	gotNamespace   string
 	gotStatus      *resourcev1.AllocatedDeviceStatus
+}
+
+func (f *fakeConfigurator) IsSupported(
+	_ context.Context,
+	_ *host.Device,
+	_ *v1alpha1.DeviceConfiguration,
+) (bool, error) {
+	return true, nil
 }
 
 func (f *fakeConfigurator) ExposedDevice(

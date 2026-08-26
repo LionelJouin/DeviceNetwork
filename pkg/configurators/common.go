@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2026
+Copyright 2026 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -28,6 +28,14 @@ import (
 )
 
 type Configurator interface {
+	// IsSupported reports whether the given host device can be configured
+	// according to the given DeviceConfiguration.
+	IsSupported(
+		ctx context.Context,
+		hostDevice *host.Device,
+		deviceConfiguration *v1alpha1.DeviceConfiguration,
+	) (bool, error)
+
 	// ExposedDevice configures the device which will be exposed in ResourceSlice.
 	ExposedDevice(
 		ctx context.Context,

@@ -2,19 +2,19 @@
 apiVersion: resource.k8s.io/v1
 kind: ResourceClaimTemplate
 metadata:
-  name: all-network
+  name: my-network
 spec:
   spec:
     devices:
       requests:
-      - name: all-network
+      - name: my-network
         exactly:
           deviceClassName: devicenetwork
           allocationMode: ExactCount
           count: 1
           selectors:
           - cel:
-              expression: device.attributes["multinetwork.networking.k8s.io"].podNetwork == "all-network"
+              expression: device.attributes["multinetwork.networking.k8s.io"].podNetwork == "my-network"
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -22,6 +22,8 @@ metadata:
   name: demo
   labels:
     app: demo
+  annotations:
+    required-plugins.noderesource.dev/pod: '["devicenetwork"]'
 spec:
   replicas: 1
   selector:
@@ -40,5 +42,5 @@ spec:
         - sleep
         - infinity
       resourceClaims:
-      - name: all-network
-        resourceClaimTemplateName: all-network
+      - name: my-network
+        resourceClaimTemplateName: my-network

@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2026
+Copyright 2026 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -19,10 +19,13 @@ package devicenetwork_test
 import (
 	"context"
 	"fmt"
-	"reflect"
+	"sort"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/lioneljouin/devicenetwork/apis/v1alpha1"
 	deviceNetworkListers "github.com/lioneljouin/devicenetwork/pkg/client/listers/apis/v1alpha1"
 	"github.com/lioneljouin/devicenetwork/pkg/configurators"
@@ -30,12 +33,32 @@ import (
 	"github.com/lioneljouin/devicenetwork/pkg/host"
 	corev1 "k8s.io/api/core/v1"
 	resourcev1 "k8s.io/api/resource/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/cache"
 
 	corev1listers "k8s.io/client-go/listers/core/v1"
 	"k8s.io/dynamic-resource-allocation/resourceslice"
 )
+
+// sliceSignature builds an order-independent, pointer-independent key for a
+// resourceslice.Slice so that Slices can be compared without caring which
+// order the reconciler happened to append them in.
+func sliceSignature(s resourceslice.Slice) string {
+	deviceNames := make([]string, len(s.Devices))
+	for i, d := range s.Devices {
+		deviceNames[i] = d.Name
+	}
+	sort.Strings(deviceNames)
+
+	counterNames := make([]string, len(s.SharedCounters))
+	for i, c := range s.SharedCounters {
+		counterNames[i] = c.Name
+	}
+	sort.Strings(counterNames)
+
+	return "devices:" + strings.Join(deviceNames, ",") + "|counters:" + strings.Join(counterNames, ",")
+}
 
 func newNodeLister(nodes ...*corev1.Node) corev1listers.NodeLister {
 	indexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{})
@@ -94,6 +117,10 @@ func (f *fakeConfigurator) Configure(_ context.Context, _ string, ads *resourcev
 
 func (f *fakeConfigurator) Release(_ context.Context, _ string, _ *resourcev1.AllocatedDeviceStatus) (*resourcev1.AllocatedDeviceStatus, error) {
 	return nil, nil
+}
+
+func (f *fakeConfigurator) IsSupported(_ context.Context, _ *host.Device, _ *v1alpha1.DeviceConfiguration) (bool, error) {
+	return true, nil
 }
 
 var _ configurators.Configurator = (*fakeConfigurator)(nil)
@@ -209,18 +236,26 @@ func TestDeviceNetworkReconciler_Reconcile(t *testing.T) {
 				hostDevName := "eth0"
 				return &resourceslice.DriverResources{
 					Pools: map[string]resourceslice.Pool{
-						"node-a": {Slices: []resourceslice.Slice{{
-							Devices: []resourcev1.Device{{
-								Name: "net1-macvlan-cfg-eth0",
-								Attributes: map[resourcev1.QualifiedName]resourcev1.DeviceAttribute{
-									resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributeDeviceType):          {StringValue: &deviceType},
-									resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributePodNetwork):          {StringValue: &podNetwork},
-									resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributeNetworkKind):         {StringValue: &networkKind},
-									resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributeDeviceConfiguration): {StringValue: &deviceCfg},
-									resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributeHostDeviceName):      {StringValue: &hostDevName},
-								},
-							}},
-						}}},
+						"node-a": {Slices: []resourceslice.Slice{
+							{
+								Devices: []resourcev1.Device{{
+									Name: "net1-macvlan-cfg-eth0",
+									Attributes: map[resourcev1.QualifiedName]resourcev1.DeviceAttribute{
+										resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributeDeviceType):          {StringValue: &deviceType},
+										resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributePodNetwork):          {StringValue: &podNetwork},
+										resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributeNetworkKind):         {StringValue: &networkKind},
+										resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributeDeviceConfiguration): {StringValue: &deviceCfg},
+										resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributeHostDeviceName):      {StringValue: &hostDevName},
+									},
+								}},
+							},
+							{
+								SharedCounters: []resourcev1.CounterSet{{
+									Name:     hostDevName,
+									Counters: map[string]resourcev1.Counter{"mutual-exclusion": {Value: resource.MustParse("65536")}},
+								}},
+							},
+						}},
 					},
 				}
 			}(),
@@ -258,9 +293,14 @@ func TestDeviceNetworkReconciler_Reconcile(t *testing.T) {
 			wantErr:             false,
 			wantResources: &resourceslice.DriverResources{
 				Pools: map[string]resourceslice.Pool{
-					"node-a": {Slices: []resourceslice.Slice{{
-						Devices: []resourcev1.Device{},
-					}}},
+					"node-a": {Slices: []resourceslice.Slice{
+						{
+							Devices: []resourcev1.Device{},
+						},
+						{
+							SharedCounters: []resourcev1.CounterSet{},
+						},
+					}},
 				},
 			},
 		},
@@ -313,9 +353,14 @@ func TestDeviceNetworkReconciler_Reconcile(t *testing.T) {
 			wantErr: false,
 			wantResources: &resourceslice.DriverResources{
 				Pools: map[string]resourceslice.Pool{
-					"node-a": {Slices: []resourceslice.Slice{{
-						Devices: []resourcev1.Device{},
-					}}},
+					"node-a": {Slices: []resourceslice.Slice{
+						{
+							Devices: []resourcev1.Device{},
+						},
+						{
+							SharedCounters: []resourcev1.CounterSet{},
+						},
+					}},
 				},
 			},
 		},
@@ -369,30 +414,38 @@ func TestDeviceNetworkReconciler_Reconcile(t *testing.T) {
 				cfgB := "cfg-b"
 				return &resourceslice.DriverResources{
 					Pools: map[string]resourceslice.Pool{
-						"node-a": {Slices: []resourceslice.Slice{{
-							Devices: []resourcev1.Device{
-								{
-									Name: "net1-cfg-a-eth0",
-									Attributes: map[resourcev1.QualifiedName]resourcev1.DeviceAttribute{
-										resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributeDeviceType):          {StringValue: &deviceType},
-										resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributePodNetwork):          {StringValue: &podNetwork},
-										resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributeNetworkKind):         {StringValue: &networkKind},
-										resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributeDeviceConfiguration): {StringValue: &cfgA},
-										resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributeHostDeviceName):      {StringValue: &hostDevName},
+						"node-a": {Slices: []resourceslice.Slice{
+							{
+								Devices: []resourcev1.Device{
+									{
+										Name: "net1-cfg-a-eth0",
+										Attributes: map[resourcev1.QualifiedName]resourcev1.DeviceAttribute{
+											resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributeDeviceType):          {StringValue: &deviceType},
+											resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributePodNetwork):          {StringValue: &podNetwork},
+											resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributeNetworkKind):         {StringValue: &networkKind},
+											resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributeDeviceConfiguration): {StringValue: &cfgA},
+											resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributeHostDeviceName):      {StringValue: &hostDevName},
+										},
 									},
-								},
-								{
-									Name: "net1-cfg-b-eth0",
-									Attributes: map[resourcev1.QualifiedName]resourcev1.DeviceAttribute{
-										resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributeDeviceType):          {StringValue: &deviceType},
-										resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributePodNetwork):          {StringValue: &podNetwork},
-										resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributeNetworkKind):         {StringValue: &networkKind},
-										resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributeDeviceConfiguration): {StringValue: &cfgB},
-										resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributeHostDeviceName):      {StringValue: &hostDevName},
+									{
+										Name: "net1-cfg-b-eth0",
+										Attributes: map[resourcev1.QualifiedName]resourcev1.DeviceAttribute{
+											resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributeDeviceType):          {StringValue: &deviceType},
+											resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributePodNetwork):          {StringValue: &podNetwork},
+											resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributeNetworkKind):         {StringValue: &networkKind},
+											resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributeDeviceConfiguration): {StringValue: &cfgB},
+											resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributeHostDeviceName):      {StringValue: &hostDevName},
+										},
 									},
 								},
 							},
-						}}},
+							{
+								SharedCounters: []resourcev1.CounterSet{{
+									Name:     hostDevName,
+									Counters: map[string]resourcev1.Counter{"mutual-exclusion": {Value: resource.MustParse("65536")}},
+								}},
+							},
+						}},
 					},
 				}
 			}(),
@@ -451,9 +504,17 @@ func TestDeviceNetworkReconciler_Reconcile(t *testing.T) {
 				}
 				return &resourceslice.DriverResources{
 					Pools: map[string]resourceslice.Pool{
-						"node-a": {Slices: []resourceslice.Slice{{
-							Devices: []resourcev1.Device{duplicateDevice},
-						}}},
+						"node-a": {Slices: []resourceslice.Slice{
+							{
+								Devices: []resourcev1.Device{duplicateDevice},
+							},
+							{
+								SharedCounters: []resourcev1.CounterSet{{
+									Name:     hostDevName,
+									Counters: map[string]resourcev1.Counter{"mutual-exclusion": {Value: resource.MustParse("65536")}},
+								}},
+							},
+						}},
 					},
 				}
 			}(),
@@ -489,8 +550,14 @@ func TestDeviceNetworkReconciler_Reconcile(t *testing.T) {
 			}
 
 			if tt.wantResources != nil && captured != nil {
-				if !reflect.DeepEqual(*captured, *tt.wantResources) {
-					t.Errorf("published resources mismatch:\ngot:  %+v\nwant: %+v", *captured, *tt.wantResources)
+				diff := cmp.Diff(*tt.wantResources, *captured,
+					cmpopts.EquateEmpty(),
+					cmpopts.SortSlices(func(a, b resourceslice.Slice) bool {
+						return sliceSignature(a) < sliceSignature(b)
+					}),
+				)
+				if diff != "" {
+					t.Errorf("published resources mismatch (-want +got):\n%s", diff)
 				}
 			}
 		})

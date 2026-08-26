@@ -10,6 +10,8 @@ make push-image VERSION=latest
 docker exec -it kind-worker ip link add dummy0 type dummy
 docker exec -it kind-worker ip link set dummy0 up
 
+docker exec -it kind-control-plane ip link add dummy0 type dummy
+docker exec -it kind-control-plane ip link set dummy0 up
 
 docker exec -it kind-worker ip link add br0 type bridge
 docker exec -it kind-worker ip link set br0 up
