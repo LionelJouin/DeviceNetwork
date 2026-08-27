@@ -27,6 +27,8 @@ import (
 	"github.com/lioneljouin/devicenetwork/pkg/configurators"
 	"github.com/lioneljouin/devicenetwork/pkg/status"
 	resourcev1 "k8s.io/api/resource/v1"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/dynamic-resource-allocation/structured"
 	"k8s.io/klog/v2"
 )
 
@@ -135,7 +137,18 @@ func (cp *configurationProcess) configureResourceClaim(ctx context.Context, clai
 			continue
 		}
 
+		var shareID *types.UID
+		if deviceStatus.ShareID != nil {
+			shareID = (*types.UID)(deviceStatus.ShareID)
+		}
+		deviceID := structured.MakeSharedDeviceID(
+			structured.MakeDeviceID(deviceStatus.Driver, deviceStatus.Pool, deviceStatus.Device), shareID)
+
 		resourceClaimDeviceStatusData := &status.ResourceClaimDeviceStatusData{}
+		if deviceStatus.Data == nil || deviceStatus.Data.Raw == nil {
+			return fmt.Errorf("device status data is nil for device %s in claim %s", deviceID, claim.Name)
+		}
+
 		err := json.Unmarshal(deviceStatus.Data.Raw, resourceClaimDeviceStatusData)
 		if err != nil {
 			return fmt.Errorf("failed to unmarshal allocated device status data: %v", err)

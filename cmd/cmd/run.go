@@ -162,8 +162,10 @@ func (ro *runOptions) run(ctx context.Context) error {
 	macvlanConfigurator := &configurators.Macvlan{
 		CommonConfigurator: &configurators.CommonConfigurator{},
 	}
+	hostDeviceConfigurator := &configurators.HostDevice{}
 	deviceConfigurators := map[v1alpha1.DeviceType]configurators.Configurator{
-		v1alpha1.DeviceTypeMacvlan: macvlanConfigurator,
+		v1alpha1.DeviceTypeMacvlan:    macvlanConfigurator,
+		v1alpha1.DeviceTypeHostDevice: hostDeviceConfigurator,
 	}
 
 	nriPlugin := nri.NewPlugin(

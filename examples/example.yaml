@@ -19,6 +19,10 @@ spec:
     deviceType: Macvlan
     deviceSelectors:
     - "dummy-interfaces"
+  - name: "host-device"
+    deviceType: HostDevice
+    deviceSelectors:
+    - "dummy-interfaces"
   networkInterfaceConfiguration:
     ipam:
     - provider: Random

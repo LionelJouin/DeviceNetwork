@@ -2,38 +2,41 @@
 apiVersion: resource.k8s.io/v1
 kind: ResourceClaimTemplate
 metadata:
-  name: my-network
+  name: my-network-host-device
 spec:
   spec:
     devices:
       requests:
-      - name: my-network
+      - name: my-network-host-device
         exactly:
           deviceClassName: devicenetwork
           allocationMode: ExactCount
           count: 1
           selectors:
           - cel:
-              expression: device.attributes["multinetwork.networking.k8s.io"].podNetwork == "my-network"
+              expression: device.attributes["multinetwork.networking.k8s.io"].podNetwork == "my-network" && device.attributes["devicenetwork.io"].deviceConfiguration == "host-device"
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: demo
+  name: demo-host-device
   labels:
-    app: demo
-  annotations:
-    required-plugins.noderesource.dev/pod: '["devicenetwork"]'
+    app: demo-host-device
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: demo
+      app: demo-host-device
   template:
     metadata:
       labels:
-        app: demo
+        app: demo-host-device
     spec:
+      tolerations:
+      - operator: Exists
+        effect: NoSchedule
+      - operator: Exists
+        effect: NoExecute
       containers:
       - name: alpine
         image: alpine:latest
@@ -42,5 +45,5 @@ spec:
         - sleep
         - infinity
       resourceClaims:
-      - name: my-network
-        resourceClaimTemplateName: my-network
+      - name: my-network-host-device
+        resourceClaimTemplateName: my-network-host-device
