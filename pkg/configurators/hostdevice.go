@@ -25,17 +25,33 @@ import (
 	"github.com/lioneljouin/devicenetwork/pkg/host"
 	"github.com/lioneljouin/devicenetwork/pkg/status"
 	"github.com/vishvananda/netlink"
+	"github.com/vishvananda/netns"
 	resourcev1 "k8s.io/api/resource/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/klog/v2"
 	"k8s.io/utils/ptr"
 )
 
 type HostDevice struct {
+	// sysfsNetRoot is the sysfs path holding the network device class, used to
+	// discover the RDMA devices backing an interface. It defaults to
+	// host.DefaultSysfsNetRoot ("/sys/class/net") in production; tests override
+	// it with a temporary directory to mock RDMA discovery.
+	sysfsNetRoot string
 }
 
 // IsSupported reports whether the given host device can be configured
 // according to the given DeviceConfiguration.
+//
+// A device is supported only if it can be safely moved into the pod network
+// namespace and returned to the host when the pod is deleted. The following
+// are rejected:
+//   - loopback: every namespace has its own lo; the kernel refuses to move it
+//   - bridge, bond, team: carry NETIF_F_NETNS_LOCAL; the kernel refuses to move them
+//   - tun/tap (type "tuntap"): fd-based; severing the fd breaks the device and it may be destroyed
+//   - ParentIndex != 0 (macvlan, vlan, ipvlan, macsec, …): destroyed on netns deletion
+//   - MasterIndex != 0: enslaved to a bridge or bond; must be freed before moving
 func (hd *HostDevice) IsSupported(
 	ctx context.Context,
 	hostDevice *host.Device,
@@ -67,8 +83,18 @@ func (hd *HostDevice) IsSupported(
 	// Bridge, bond, and team devices carry NETIF_F_NETNS_LOCAL: the kernel
 	// refuses to move them to another namespace at all, regardless of whether
 	// they currently have any enslaved interfaces.
+	// Tun/tap devices are fd-based; moving them severs the fd-holder's access
+	// and the device may be destroyed when all fds are closed.
+	// Note: vishvananda/netlink maps IFLA_INFO_KIND "tun" to Type() "tuntap".
 	switch link.Type() {
-	case "bridge", "bond", "team":
+	case "bridge", "bond", "team", "tuntap":
+		return false, nil
+	}
+
+	// Virtual devices with a parent interface (macvlan, vlan, ipvlan, macsec,
+	// etc.) are destroyed rather than returned to the host when the pod
+	// namespace is deleted, so they cannot be safely used as host devices.
+	if link.Attrs().ParentIndex != 0 {
 		return false, nil
 	}
 
@@ -188,12 +214,90 @@ func (hd *HostDevice) Configure(
 	podNetworkNamespace string,
 	allocatedDeviceStatus *resourcev1.AllocatedDeviceStatus,
 ) (*resourcev1.AllocatedDeviceStatus, error) {
-	return nil, nil
+	if allocatedDeviceStatus == nil {
+		return nil, fmt.Errorf("allocatedDeviceStatus is nil")
+	}
+	allocatedDeviceStatusRes := allocatedDeviceStatus.DeepCopy()
+
+	if allocatedDeviceStatus.Data == nil || allocatedDeviceStatus.Data.Raw == nil {
+		return nil, fmt.Errorf("allocated device status data is nil")
+	}
+
+	resourceClaimDeviceStatusData := &status.ResourceClaimDeviceStatusData{}
+	err := json.Unmarshal(allocatedDeviceStatus.Data.Raw, resourceClaimDeviceStatusData)
+	if err != nil {
+		return nil, fmt.Errorf("failed to unmarshal allocated device status data: %v", err)
+	}
+
+	if resourceClaimDeviceStatusData.Device == nil {
+		return nil, fmt.Errorf("allocated device status data does not contain device information")
+	}
+
+	if resourceClaimDeviceStatusData.DeviceConfiguration == nil {
+		return nil, fmt.Errorf("allocated device status data does not contain device configuration information")
+	}
+
+	if v1alpha1.GetDeviceType(*resourceClaimDeviceStatusData.DeviceConfiguration) != v1alpha1.DeviceTypeHostDevice {
+		return nil, fmt.Errorf("allocated device status data does not contain host device configuration information")
+	}
+
+	nsHandle, err := netns.GetFromPath(podNetworkNamespace)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get network namespace from path %q: %v", podNetworkNamespace, err)
+	}
+	defer func() {
+		if err := nsHandle.Close(); err != nil {
+			klog.FromContext(ctx).Error(err, "failed to close network namespace handle")
+		}
+	}()
+
+	ifName := resourceClaimDeviceStatusData.Device.Spec.InterfaceName
+
+	// Resolve the RDMA devices backing the interface before moving anything:
+	// discovery reads <sysfsNetRoot>/<ifName>/device/infiniband, which no longer
+	// resolves on the host once the netdev has left the host network namespace.
+	sysfsNetRoot := hd.sysfsNetRoot
+	if sysfsNetRoot == "" {
+		sysfsNetRoot = host.DefaultSysfsNetRoot
+	}
+
+	rdmaDevices, err := host.RDMADevicesForNetdev(sysfsNetRoot, ifName)
+	if err != nil {
+		return nil, err
+	}
+
+	// Move the RDMA device(s) into the pod network namespace.
+	for _, rdmaDevName := range rdmaDevices {
+		rdmaLink, err := netlink.RdmaLinkByName(rdmaDevName)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get RDMA link %q: %v", rdmaDevName, err)
+		}
+		if err := netlink.RdmaLinkSetNsFd(rdmaLink, uint32(nsHandle)); err != nil {
+			return nil, fmt.Errorf("failed to move RDMA link %q to pod network namespace: %v", rdmaDevName, err)
+		}
+	}
+
+	link, err := netlink.LinkByName(ifName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get link %q: %v", ifName, err)
+	}
+
+	if err := netlink.LinkSetNsFd(link, int(nsHandle)); err != nil {
+		return nil, fmt.Errorf("failed to move link %q to pod network namespace: %v", ifName, err)
+	}
+
+	return allocatedDeviceStatusRes, nil
 }
 
 // Release releases the device.
 //
 // It must be called when the Pod is getting deleted.
+//
+// No explicit network cleanup is required: when the pod network namespace is
+// deleted, the kernel automatically moves physical interfaces (and associated
+// RDMA devices) still inside it back to the host network namespace. Virtual
+// devices with a parent in another namespace are excluded from HostDevice by
+// IsSupported, so they are never moved here.
 func (hd *HostDevice) Release(
 	ctx context.Context,
 	podNetworkNamespace string,

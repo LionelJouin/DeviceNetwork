@@ -47,6 +47,7 @@ func EvalDevices(ctx context.Context, expression string, devices []*Device) ([]*
 func celProgram(expression string) (cel.Program, error) {
 	env, err := cel.NewEnv(
 		cel.Variable(string(v1alpha1.InterfaceNameDeviceSelectorAttribute), cel.StringType),
+		cel.Variable(string(v1alpha1.RDMACapableDeviceSelectorAttribute), cel.BoolType),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("error creating CEL environment: %w", err)
@@ -69,6 +70,7 @@ func eval(ctx context.Context, program cel.Program, device *Device) (bool, error
 	out, _, err := program.ContextEval(ctx,
 		map[string]any{
 			string(v1alpha1.InterfaceNameDeviceSelectorAttribute): device.Spec.InterfaceName,
+			string(v1alpha1.RDMACapableDeviceSelectorAttribute):   device.Spec.RDMACapable,
 		},
 	)
 	if err != nil {

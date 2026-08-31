@@ -45,6 +45,15 @@ IGB_COUNT="${IGB_COUNT:-2}"
 IGB_PLAIN_COUNT="${IGB_PLAIN_COUNT:-2}"
 VIRTIO_NET_COUNT="${VIRTIO_NET_COUNT:-2}"
 SRIOV_VF_COUNT="${SRIOV_VF_COUNT:-4}"
+# Kernel package to install in the VM. Defaults to linux-stable (7.1.x) from the
+# Alpine edge community repository. The newer kernel is required so software
+# RDMA (rxe) works inside network namespaces: before this, rxe's UDP socket
+# lived only in init_net, so an rxe link created in another netns failed. Fixed
+# by commit f1327abd6abe ("RDMA/rxe: Support RDMA link creation and destruction
+# per net namespace"), merged in 7.1. See https://lwn.net/Articles/1061946/.
+# Alpine 3.21's default LTS kernel is too old. This override can be dropped once
+# Alpine ships a default kernel that includes the fix.
+KERNEL_PKG="${KERNEL_PKG:-linux-stable@edgecomm}"
 
 VM_IMAGE="${E2E_DIR}/vm.qcow2"
 SEED_ISO="${E2E_DIR}/seed.iso"
@@ -166,20 +175,25 @@ users:
 
 runcmd:
   - sed -i 's|^#\(.*community\)|\1|' /etc/apk/repositories
+  - echo "@edgemain http://dl-cdn.alpinelinux.org/alpine/edge/main" >> /etc/apk/repositories
+  - echo "@edgecomm http://dl-cdn.alpinelinux.org/alpine/edge/community" >> /etc/apk/repositories
   - apk update
-  - apk add linux-lts
-  - mkinitfs \$(ls /lib/modules/ | grep lts | head -1)
-  - apk add --no-cache bash curl pciutils iproute2 iptables cni-plugins numactl-tools ethtool eudev
+  - apk add ${KERNEL_PKG} linux-firmware-none@edgemain
+  - |
+    KVER=\$(ls /lib/modules/ | grep -v -- -virt | head -1)
+    KFLAV=\${KVER##*-}
+    mkinitfs "\$KVER"
+    sed -i "s/vmlinuz-virt/vmlinuz-\$KFLAV/g; s/initramfs-virt/initramfs-\$KFLAV/g" /boot/extlinux.conf
+  - apk add --no-cache bash curl pciutils iproute2 iproute2-rdma iptables cni-plugins numactl-tools ethtool eudev rdma-core
   - setup-devd udev
   - rm -f /etc/udev/rules.d/70-persistent-net.rules
   - rc-update add cgroups default
   - rc-service cgroups start || true
-  - printf 'igb\nigbvf\nbr_netfilter\n' >> /etc/modules
+  - printf 'igb\nigbvf\nbr_netfilter\nrdma_rxe\n' >> /etc/modules
   - mount --make-rshared /
   - printf '#!/sbin/openrc-run\ncommand="/bin/mount"\ncommand_args="--make-rshared /"\n' > /etc/init.d/shared-mount
   - chmod +x /etc/init.d/shared-mount
   - rc-update add shared-mount boot
-  - sed -i 's/vmlinuz-virt/vmlinuz-lts/g; s/initramfs-virt/initramfs-lts/g' /boot/extlinux.conf
   - |
     curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION="${K3S_VERSION}" INSTALL_K3S_EXEC="server --disable=traefik --disable=metrics-server --disable=servicelb --node-name=e2e-node --write-kubeconfig-mode=644" sh -
   - touch /var/lib/cloud-init-done
@@ -311,7 +325,7 @@ cmd_up() {
         sleep 5
     done
 
-    echo "  Rebooting into LTS kernel..."
+    echo "  Rebooting into ${KERNEL_PKG} kernel..."
     ssh_cmd "reboot" || true
     sleep 5
     wait_ssh 60
@@ -322,12 +336,31 @@ cmd_up() {
     ssh_cmd "modprobe igb; modprobe igbvf" || true
     local pf_addrs
     pf_addrs=$(ssh_cmd "ls -d /sys/bus/pci/drivers/igb/0000:* 2>/dev/null | xargs -I{} basename {} | head -n ${IGB_COUNT}" || true)
+    local rdma_vf_iface=""
     for addr in $pf_addrs; do
         ssh_cmd "echo ${SRIOV_VF_COUNT} > /sys/bus/pci/devices/${addr}/sriov_numvfs" 2>/dev/null || true
         local pf_iface
         pf_iface=$(ssh_cmd "ls /sys/bus/pci/devices/${addr}/net/ 2>/dev/null | head -1" || true)
         echo "  PF ${addr} (${pf_iface:-unknown}): ${SRIOV_VF_COUNT} VFs"
+        if [[ -z "$rdma_vf_iface" ]]; then
+            rdma_vf_iface=$(ssh_cmd "ls /sys/bus/pci/devices/${addr}/virtfn0/net/ 2>/dev/null | head -1" || true)
+        fi
     done
+
+    # Real RDMA NICs (Mellanox ConnectX, Broadcom bnxt_re) expose a separate
+    # RDMA device per VF, not just on the PF. Binding rxe to a VF instead of
+    # a plain NIC mirrors that, and exercises HostDevice+RDMA together on the
+    # same device; other VFs (and the plain igb NICs) remain non-RDMA-capable
+    # controls for the negative path.
+    echo "  Creating RDMA (Soft-RoCE) link on an SR-IOV VF..."
+    ssh_cmd "modprobe rdma_rxe" || true
+    if [[ -n "$rdma_vf_iface" ]]; then
+        ssh_cmd "ip link set ${rdma_vf_iface} up" || true
+        ssh_cmd "rdma link add rxe0 type rxe netdev ${rdma_vf_iface}" 2>/dev/null || true
+        echo "  RDMA link rxe0 bound to VF ${rdma_vf_iface} (best-effort; requires CONFIG_RDMA_RXE in the LTS kernel)"
+    else
+        echo "  WARNING: no SR-IOV VF found to bind an RDMA link to, skipping"
+    fi
 
     scp_from "/etc/rancher/k3s/k3s.yaml" "$KUBECONFIG_PATH"
     sed -i "s|127.0.0.1:6443|127.0.0.1:${API_PORT}|g" "$KUBECONFIG_PATH"
@@ -413,7 +446,8 @@ cmd_help() {
 Usage: $0 <command>
 
 Commands:
-  up          Start cluster with Alpine + k3s + igb SR-IOV NICs (~2-3 min)
+  up          Start cluster with Alpine + k3s + igb SR-IOV NICs + a Soft-RoCE
+              (rdma_rxe) RDMA link on one of the SR-IOV VFs (~2-3 min)
   down        Stop cluster and remove VM disk
   ssh [cmd]   SSH into the VM (optionally run a command)
   kubeconfig  Print kubeconfig file path

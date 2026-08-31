@@ -24,20 +24,29 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 )
 
 var (
 	kubeClient          kubernetes.Interface
 	deviceNetworkClient devicenetworkclientset.Interface
+	// restConfig is the loaded REST config, kept so tests can open exec streams
+	// into pods via remotecommand.
+	restConfig *rest.Config
 
 	macvlanNodeName      string
 	macvlanInterfaceName string
+
+	hostDeviceNodeName      string
+	hostDeviceInterfaceName string
 )
 
 func init() {
 	flag.StringVar(&macvlanNodeName, "e2e.macvlan-node-name", "", "Node with the interface to create macvlans on (required for macvlan tests)")
 	flag.StringVar(&macvlanInterfaceName, "e2e.macvlan-interface-name", "", "Host interface name to create macvlans on (required for macvlan tests)")
+	flag.StringVar(&hostDeviceNodeName, "e2e.hostdevice-node-name", "", "Node with the interface to move into a Pod as a host device (required for host device tests)")
+	flag.StringVar(&hostDeviceInterfaceName, "e2e.hostdevice-interface-name", "", "Host interface name to move into a Pod as a host device (required for host device tests)")
 }
 
 func TestE2E(t *testing.T) {
@@ -48,6 +57,8 @@ func TestE2E(t *testing.T) {
 var _ = BeforeSuite(func() {
 	Expect(macvlanNodeName).NotTo(BeEmpty(), "--e2e.macvlan-node-name is required")
 	Expect(macvlanInterfaceName).NotTo(BeEmpty(), "--e2e.macvlan-interface-name is required")
+	Expect(hostDeviceNodeName).NotTo(BeEmpty(), "--e2e.hostdevice-node-name is required")
+	Expect(hostDeviceInterfaceName).NotTo(BeEmpty(), "--e2e.hostdevice-interface-name is required")
 
 	loadingRules := clientcmd.NewDefaultClientConfigLoadingRules()
 	configOverrides := &clientcmd.ConfigOverrides{}
@@ -55,6 +66,7 @@ var _ = BeforeSuite(func() {
 
 	cfg, err := kubeConfig.ClientConfig()
 	Expect(err).NotTo(HaveOccurred(), "failed to load kubeconfig")
+	restConfig = cfg
 
 	kubeClient, err = kubernetes.NewForConfig(cfg)
 	Expect(err).NotTo(HaveOccurred())

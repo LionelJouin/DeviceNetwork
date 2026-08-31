@@ -51,6 +51,18 @@ func TestEvalDevices(t *testing.T) {
 			},
 			wantErr: false,
 		},
+		{
+			name:       "rdmaCapable-selects-only-rdma-capable-devices",
+			expression: "rdmaCapable",
+			devices: []*host.Device{
+				{Spec: host.DeviceSpec{InterfaceName: "eth0", RDMACapable: true}},
+				{Spec: host.DeviceSpec{InterfaceName: "eth1", RDMACapable: false}},
+			},
+			want: []*host.Device{
+				{Spec: host.DeviceSpec{InterfaceName: "eth0", RDMACapable: true}},
+			},
+			wantErr: false,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

@@ -50,6 +50,11 @@ type DeviceCache struct {
 
 	interval time.Duration
 
+	// sysfsNetRoot is the sysfs path holding the network device class, used to
+	// discover whether an interface is RDMA-capable. Defaults to
+	// DefaultSysfsNetRoot; tests override it to point at a temporary directory.
+	sysfsNetRoot string
+
 	mu       sync.RWMutex
 	snapshot map[string]*Device
 }
@@ -64,8 +69,9 @@ func NewDeviceCache(
 			workqueue.DefaultTypedControllerRateLimiter[string](),
 			workqueue.TypedRateLimitingQueueConfig[string]{Name: queueName},
 		),
-		interval: interval,
-		snapshot: map[string]*Device{},
+		interval:     interval,
+		sysfsNetRoot: DefaultSysfsNetRoot,
+		snapshot:     map[string]*Device{},
 	}
 
 	dc.watcher = watch.NewBroadcaster(1000, watch.DropIfChannelFull)
@@ -235,8 +241,6 @@ func (dc *DeviceCache) List(ctx context.Context, opts ...Option) []*Device {
 }
 
 func (dc *DeviceCache) syncDevice(deviceKey string) error {
-	klog.FromContext(context.TODO()).Info("Syncing device", "key", deviceKey)
-
 	link, err := netlink.LinkByName(deviceKey)
 	if err != nil {
 		if !errors.As(err, &netlink.LinkNotFoundError{}) {
@@ -263,6 +267,8 @@ func (dc *DeviceCache) syncDevice(deviceKey string) error {
 	}
 
 	newEntry := dc.buildDevice(link)
+
+	klog.FromContext(context.TODO()).Info("Syncing device", "key", deviceKey, "device", newEntry)
 
 	dc.mu.Lock()
 	existing, found := dc.snapshot[deviceKey]
@@ -305,6 +311,7 @@ func (dc *DeviceCache) buildDevice(link netlink.Link) *Device {
 		Spec: DeviceSpec{
 			InterfaceName:  link.Attrs().Name,
 			InterfaceIndex: link.Attrs().Index,
+			RDMACapable:    isRDMACapable(dc.sysfsNetRoot, link.Attrs().Name),
 		},
 	}
 

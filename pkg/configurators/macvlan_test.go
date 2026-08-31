@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package configurators_test
+package configurators
 
 import (
 	"encoding/json"
@@ -25,7 +25,6 @@ import (
 	"testing"
 
 	"github.com/lioneljouin/devicenetwork/apis/v1alpha1"
-	"github.com/lioneljouin/devicenetwork/pkg/configurators"
 	"github.com/lioneljouin/devicenetwork/pkg/host"
 	"github.com/lioneljouin/devicenetwork/pkg/status"
 	"github.com/vishvananda/netlink"
@@ -79,7 +78,7 @@ func TestMacvlan_Allocate(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var mcvln configurators.Macvlan
+			var mcvln Macvlan
 			got, gotErr := mcvln.Allocate(t.Context(), tt.hostDevice, tt.deviceConfiguration, tt.networkInterfaceConfiguration, tt.allocatedDeviceStatus)
 			if gotErr != nil {
 				if !tt.wantErr {
@@ -179,7 +178,7 @@ func TestMacvlan_ExposedDevice(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var mcvln configurators.Macvlan
+			var mcvln Macvlan
 			got, gotErr := mcvln.ExposedDevice(t.Context(), tt.hostDevice, tt.device)
 			if gotErr != nil {
 				if !tt.wantErr {
@@ -202,6 +201,8 @@ func TestMacvlan_Configure(t *testing.T) {
 		t.Skip("requires root privileges (network namespace and link creation)")
 	}
 
+	// Lock the setup goroutine to its OS thread so that netns switches take
+	// effect for all netlink calls below. Each subtest re-locks independently.
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 
@@ -218,9 +219,10 @@ func TestMacvlan_Configure(t *testing.T) {
 		}
 	})
 
-	// Create an isolated "host" namespace so the dummy parent never touches the real host.
-	// netns.New() creates an unnamed namespace (fd-only, no /var/run/netns/ entry),
-	// so closing the fd is enough for the kernel to clean it up.
+	// hostNS is an isolated namespace where the parent dummy lives, so the
+	// real host network stack is never touched. netns.New() creates an unnamed
+	// namespace (fd-only, no /var/run/netns/ entry); closing the fd is enough
+	// for the kernel to clean it up.
 	hostNS, err := netns.New()
 	if err != nil {
 		t.Fatalf("failed to create host netns: %v", err)
@@ -231,6 +233,8 @@ func TestMacvlan_Configure(t *testing.T) {
 		}
 	})
 
+	// dummy0: parent interface on top of which Configure creates macvlan devices.
+	// Its index is stored so it can be referenced in AllocatedDeviceStatus.
 	dummy := &netlink.Dummy{LinkAttrs: netlink.LinkAttrs{Name: "dummy0"}}
 	if err := netlink.LinkAdd(dummy); err != nil {
 		t.Fatalf("failed to add dummy interface: %v", err)
@@ -242,6 +246,8 @@ func TestMacvlan_Configure(t *testing.T) {
 	}
 	parentIndex := parentLink.Attrs().Index
 
+	// podNS is a named namespace so it has a path under /var/run/netns/ that
+	// can be passed to Configure as the pod network namespace.
 	const nsName = "test-configure"
 	if err := netns.DeleteNamed(nsName); err != nil {
 		t.Logf("cleanup of previous netns %q: %v (may not exist)", nsName, err)
@@ -259,8 +265,7 @@ func TestMacvlan_Configure(t *testing.T) {
 		}
 	})
 
-	// netns.NewNamed switches to the new ns; switch back to the host ns
-	// (where the parent interface lives and where Configure will run).
+	// Switch back to hostNS; netns.NewNamed leaves the thread in the new ns.
 	if err := netns.Set(hostNS); err != nil {
 		t.Fatalf("failed to switch to host netns: %v", err)
 	}
@@ -336,7 +341,7 @@ func TestMacvlan_Configure(t *testing.T) {
 				t.Fatalf("failed to set netns: %v", err)
 			}
 
-			var mcvln configurators.Macvlan
+			var mcvln Macvlan
 			got, gotErr := mcvln.Configure(t.Context(), tt.podNetworkNamespace, tt.allocatedDeviceStatus)
 			if gotErr != nil {
 				if !tt.wantErr {
@@ -517,7 +522,7 @@ func TestMacvlan_IsSupported(t *testing.T) {
 				}
 			}
 
-			var mcvln configurators.Macvlan
+			var mcvln Macvlan
 			got, gotErr := mcvln.IsSupported(t.Context(), tt.hostDevice, tt.deviceConfiguration)
 			if gotErr != nil {
 				if !tt.wantErr {

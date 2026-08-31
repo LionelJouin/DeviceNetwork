@@ -15,6 +15,13 @@
 REGISTRY ?= localhost:5000/devicenetwork
 VERSION ?= $(shell git describe --dirty --tags --always 2>/dev/null)
 
+# Set TEST_AS_ROOT=true to run tests requiring root privileges (network namespace
+# and link creation). Some tests also require kernel modules to be loaded for
+# full coverage (e.g. rdma_rxe for SoftRoCE, rdma_siw for Software iWARP):
+#   sudo modprobe rdma_rxe
+#   sudo modprobe rdma_siw
+TEST_AS_ROOT ?= false
+
 all: verify test build-image
 
 .PHONY: verify
@@ -23,7 +30,13 @@ verify:
 
 .PHONY: test
 test:
-	sudo env "PATH=$$PATH" go test ./pkg/... ./cmd/... ./apis/... -race -count=1 -cover
+	@mkdir -p _output
+ifeq ($(TEST_AS_ROOT),true)
+	sudo env "PATH=$$PATH" go test ./pkg/... ./cmd/... ./apis/... -race -count=1 -coverprofile=_output/coverage.out
+else
+	@echo "WARNING: TEST_AS_ROOT is not set; tests requiring root privileges will be skipped (set TEST_AS_ROOT=true to run all tests)"
+	go test ./pkg/... ./cmd/... ./apis/... -race -count=1 -coverprofile=_output/coverage.out
+endif
 
 .PHONY: .build-image
 build-image:

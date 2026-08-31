@@ -234,6 +234,10 @@ func (mcvln *Macvlan) Configure(
 // Release releases the device.
 //
 // It must be called when the Pod is getting deleted.
+//
+// No explicit network cleanup is required: when the pod network namespace is
+// deleted, the kernel destroys the macvlan device inside it automatically.
+// The parent interface on the host is unaffected.
 func (mcvln *Macvlan) Release(
 	ctx context.Context,
 	podNetworkNamespace string,

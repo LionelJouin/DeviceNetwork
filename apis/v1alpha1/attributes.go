@@ -78,4 +78,6 @@ type DeviceSelectorAttribute string
 const (
 	// InterfaceNameDeviceSelectorAttribute represents the name of the network interface.
 	InterfaceNameDeviceSelectorAttribute DeviceSelectorAttribute = "interfaceName"
+	// RDMACapableDeviceSelectorAttribute represents whether the network device is RDMA-capable.
+	RDMACapableDeviceSelectorAttribute DeviceSelectorAttribute = "rdmaCapable"
 )

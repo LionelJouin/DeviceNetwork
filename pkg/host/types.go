@@ -45,6 +45,11 @@ type DeviceSpec struct {
 
 	// The index of the device on the host.
 	InterfaceIndex int `json:"interfaceIndex"`
+
+	// RDMACapable indicates whether the device is RDMA-capable, i.e. its backing
+	// PCI device exposes at least one RDMA (InfiniBand) device under
+	// /sys/class/net/<if>/device/infiniband/.
+	RDMACapable bool `json:"rdmaCapable"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
