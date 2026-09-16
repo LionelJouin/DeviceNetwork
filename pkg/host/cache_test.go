@@ -180,6 +180,10 @@ func TestEventHandlers(t *testing.T) {
 					InterfaceName:  nic.Name,
 					InterfaceIndex: link.Attrs().Index,
 					RDMACapable:    rdmaCapable && nic.Name == rdmaCapableIf,
+					ParentIndex:    link.Attrs().ParentIndex,
+					MasterIndex:    link.Attrs().MasterIndex,
+					LinkLayerType:  link.Attrs().EncapType,
+					DeviceType:     link.Type(),
 				},
 			})
 		}

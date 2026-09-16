@@ -312,6 +312,10 @@ func (dc *DeviceCache) buildDevice(link netlink.Link) *Device {
 			InterfaceName:  link.Attrs().Name,
 			InterfaceIndex: link.Attrs().Index,
 			RDMACapable:    isRDMACapable(dc.sysfsNetRoot, link.Attrs().Name),
+			ParentIndex:    link.Attrs().ParentIndex,
+			MasterIndex:    link.Attrs().MasterIndex,
+			LinkLayerType:  link.Attrs().EncapType,
+			DeviceType:     link.Type(),
 		},
 	}
 

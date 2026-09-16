@@ -69,14 +69,9 @@ func (hd *HostDevice) IsSupported(
 		return false, nil
 	}
 
-	link, err := netlink.LinkByName(hostDevice.Spec.InterfaceName)
-	if err != nil {
-		return false, fmt.Errorf("failed to get link %q: %v", hostDevice.Spec.InterfaceName, err)
-	}
-
 	// The loopback device cannot be moved between network namespaces; every
 	// namespace already has its own "lo" that the kernel refuses to replace.
-	if link.Attrs().EncapType == "loopback" {
+	if hostDevice.Spec.LinkLayerType == "loopback" {
 		return false, nil
 	}
 
@@ -86,7 +81,7 @@ func (hd *HostDevice) IsSupported(
 	// Tun/tap devices are fd-based; moving them severs the fd-holder's access
 	// and the device may be destroyed when all fds are closed.
 	// Note: vishvananda/netlink maps IFLA_INFO_KIND "tun" to Type() "tuntap".
-	switch link.Type() {
+	switch hostDevice.Spec.DeviceType {
 	case "bridge", "bond", "team", "tuntap":
 		return false, nil
 	}
@@ -94,13 +89,13 @@ func (hd *HostDevice) IsSupported(
 	// Virtual devices with a parent interface (macvlan, vlan, ipvlan, macsec,
 	// etc.) are destroyed rather than returned to the host when the pod
 	// namespace is deleted, so they cannot be safely used as host devices.
-	if link.Attrs().ParentIndex != 0 {
+	if hostDevice.Spec.ParentIndex != 0 {
 		return false, nil
 	}
 
 	// A device already enslaved to a bridge or bond must be released from its
 	// master before it can be handed over to a pod's network namespace.
-	if link.Attrs().MasterIndex != 0 {
+	if hostDevice.Spec.MasterIndex != 0 {
 		return false, nil
 	}
 

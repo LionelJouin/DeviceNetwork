@@ -14,7 +14,7 @@ already deployed.
     `--e2e.macvlan-interface-name`.
     - **`HostDevice`**: a spare, movable interface, via `--e2e.hostdevice-node-name`
     and `--e2e.hostdevice-interface-name`.
-    - **`HostDevice RDMA`** — a **hardware RDMA NIC** via `--e2e.hostdevice-node-name` (the interface is
+    - **`HostDevice RDMA`**: a **hardware RDMA NIC** via `--e2e.hostdevice-node-name` (the interface is
     auto-selected as the RDMA-capable one).
 
 ## Deploy DeviceNetwork

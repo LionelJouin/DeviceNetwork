@@ -32,10 +32,10 @@ verify:
 test:
 	@mkdir -p _output
 ifeq ($(TEST_AS_ROOT),true)
-	sudo env "PATH=$$PATH" go test ./pkg/... ./cmd/... ./apis/... -race -count=1 -coverprofile=_output/coverage.out
+	sudo env "PATH=$$PATH" go test $$(go list ./... | grep -v /test/e2e) -race -count=1 -coverprofile=_output/coverage.out
 else
 	@echo "WARNING: TEST_AS_ROOT is not set; tests requiring root privileges will be skipped (set TEST_AS_ROOT=true to run all tests)"
-	go test ./pkg/... ./cmd/... ./apis/... -race -count=1 -coverprofile=_output/coverage.out
+	go test $$(go list ./... | grep -v /test/e2e) -race -count=1 -coverprofile=_output/coverage.out
 endif
 
 .PHONY: .build-image

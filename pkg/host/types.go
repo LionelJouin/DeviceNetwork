@@ -50,6 +50,22 @@ type DeviceSpec struct {
 	// PCI device exposes at least one RDMA (InfiniBand) device under
 	// /sys/class/net/<if>/device/infiniband/.
 	RDMACapable bool `json:"rdmaCapable"`
+
+	// ParentIndex is the index of the parent device on the host.
+	// 0 indicates that the device has no parent.
+	ParentIndex int `json:"parentIndex"`
+
+	// MasterIndex is the index of the master device on the host.
+	// 0 indicates that the device has no master.
+	MasterIndex int `json:"masterIndex"`
+
+	// LinkLayerType is the link layer type of the device.
+	// e.g. "Ethernet", "InfiniBand", "loopback", etc.
+	LinkLayerType string `json:"linkLayerType"`
+
+	// DeviceType is the type of the device.
+	// e.g. "bridge", "vlan", "macvlan", etc.
+	DeviceType string `json:"deviceType"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object

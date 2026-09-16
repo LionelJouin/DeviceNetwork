@@ -381,7 +381,6 @@ func TestMacvlan_IsSupported(t *testing.T) {
 		deviceConfiguration *v1alpha1.DeviceConfiguration
 		want                bool
 		wantErr             bool
-		requiresRoot        bool
 	}{
 		{
 			name:                "hostDevice is nil",
@@ -391,19 +390,19 @@ func TestMacvlan_IsSupported(t *testing.T) {
 		},
 		{
 			name:                "deviceConfiguration is nil",
-			hostDevice:          &host.Device{Spec: host.DeviceSpec{InterfaceName: "eth0"}},
+			hostDevice:          &host.Device{Spec: host.DeviceSpec{InterfaceName: "eth0", LinkLayerType: "ether"}},
 			deviceConfiguration: nil,
 			wantErr:             true,
 		},
 		{
 			name:                "device type is not macvlan",
-			hostDevice:          &host.Device{Spec: host.DeviceSpec{InterfaceName: "eth0"}},
+			hostDevice:          &host.Device{Spec: host.DeviceSpec{InterfaceName: "eth0", LinkLayerType: "ether"}},
 			deviceConfiguration: &v1alpha1.DeviceConfiguration{DeviceType: ptr.To(v1alpha1.DeviceTypeHostDevice)},
 			want:                false,
 		},
 		{
 			name:       "invalid macvlan mode",
-			hostDevice: &host.Device{Spec: host.DeviceSpec{InterfaceName: "eth0"}},
+			hostDevice: &host.Device{Spec: host.DeviceSpec{InterfaceName: "eth0", LinkLayerType: "ether"}},
 			deviceConfiguration: &v1alpha1.DeviceConfiguration{
 				DeviceType: ptr.To(v1alpha1.DeviceTypeMacvlan),
 				Macvlan:    &v1alpha1.Macvlan{Mode: ptr.To(v1alpha1.MacvlanMode("invalid"))},
@@ -411,17 +410,8 @@ func TestMacvlan_IsSupported(t *testing.T) {
 			want: false,
 		},
 		{
-			name:       "host device does not exist",
-			hostDevice: &host.Device{Spec: host.DeviceSpec{InterfaceName: "dn-test-missing"}},
-			deviceConfiguration: &v1alpha1.DeviceConfiguration{
-				DeviceType: ptr.To(v1alpha1.DeviceTypeMacvlan),
-				Macvlan:    &v1alpha1.Macvlan{Mode: ptr.To(v1alpha1.MacvlanModeBridge)},
-			},
-			wantErr: true,
-		},
-		{
 			name:       "lower device is not ethernet",
-			hostDevice: &host.Device{Spec: host.DeviceSpec{InterfaceName: "lo"}},
+			hostDevice: &host.Device{Spec: host.DeviceSpec{InterfaceName: "lo", LinkLayerType: "loopback"}},
 			deviceConfiguration: &v1alpha1.DeviceConfiguration{
 				DeviceType: ptr.To(v1alpha1.DeviceTypeMacvlan),
 				Macvlan:    &v1alpha1.Macvlan{Mode: ptr.To(v1alpha1.MacvlanModeBridge)},
@@ -430,98 +420,26 @@ func TestMacvlan_IsSupported(t *testing.T) {
 		},
 		{
 			name:       "device is enslaved to a bridge",
-			hostDevice: &host.Device{Spec: host.DeviceSpec{InterfaceName: "dn-test-slave"}},
+			hostDevice: &host.Device{Spec: host.DeviceSpec{InterfaceName: "dn-test-slave", LinkLayerType: "ether", MasterIndex: 2}},
 			deviceConfiguration: &v1alpha1.DeviceConfiguration{
 				DeviceType: ptr.To(v1alpha1.DeviceTypeMacvlan),
 				Macvlan:    &v1alpha1.Macvlan{Mode: ptr.To(v1alpha1.MacvlanModeBridge)},
 			},
-			want:         false,
-			requiresRoot: true,
+			want: false,
 		},
 		{
 			name:       "ethernet device is supported",
-			hostDevice: &host.Device{Spec: host.DeviceSpec{InterfaceName: "dn-test-eth"}},
+			hostDevice: &host.Device{Spec: host.DeviceSpec{InterfaceName: "dn-test-eth", LinkLayerType: "ether"}},
 			deviceConfiguration: &v1alpha1.DeviceConfiguration{
 				DeviceType: ptr.To(v1alpha1.DeviceTypeMacvlan),
 				Macvlan:    &v1alpha1.Macvlan{Mode: ptr.To(v1alpha1.MacvlanModeBridge)},
 			},
-			want:         true,
-			requiresRoot: true,
+			want: true,
 		},
-	}
-
-	// The dn-test-eth/dn-test-slave/dn-test-br0 interfaces are only needed by
-	// the requiresRoot cases; set them up in an isolated netns so the real
-	// host is never touched.
-	var testNS netns.NsHandle
-	if os.Getuid() == 0 {
-		runtime.LockOSThread()
-		defer runtime.UnlockOSThread()
-
-		origNS, err := netns.Get()
-		if err != nil {
-			t.Fatalf("failed to get current netns: %v", err)
-		}
-		t.Cleanup(func() {
-			if err := netns.Set(origNS); err != nil {
-				t.Errorf("failed to restore netns: %v", err)
-			}
-			if err := origNS.Close(); err != nil {
-				t.Errorf("failed to close original netns: %v", err)
-			}
-		})
-
-		testNS, err = netns.New()
-		if err != nil {
-			t.Fatalf("failed to create test netns: %v", err)
-		}
-		t.Cleanup(func() {
-			if err := testNS.Close(); err != nil {
-				t.Errorf("failed to close test netns: %v", err)
-			}
-		})
-
-		eth := &netlink.Dummy{LinkAttrs: netlink.LinkAttrs{Name: "dn-test-eth"}}
-		if err := netlink.LinkAdd(eth); err != nil {
-			t.Fatalf("failed to add dummy interface: %v", err)
-		}
-
-		bridge := &netlink.Bridge{LinkAttrs: netlink.LinkAttrs{Name: "dn-test-br0"}}
-		if err := netlink.LinkAdd(bridge); err != nil {
-			t.Fatalf("failed to add bridge: %v", err)
-		}
-
-		slave := &netlink.Dummy{LinkAttrs: netlink.LinkAttrs{Name: "dn-test-slave"}}
-		if err := netlink.LinkAdd(slave); err != nil {
-			t.Fatalf("failed to add slave interface: %v", err)
-		}
-		if err := netlink.LinkSetMaster(slave, bridge); err != nil {
-			t.Fatalf("failed to enslave interface to bridge: %v", err)
-		}
-
-		// Switch this thread back to the original ns; each requiresRoot
-		// subtest below switches into testNS for itself since t.Run executes
-		// subtests on a new goroutine, which is not guaranteed to run on the
-		// OS thread that was just switched into testNS above.
-		if err := netns.Set(origNS); err != nil {
-			t.Fatalf("failed to switch back to the original netns: %v", err)
-		}
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if tt.requiresRoot {
-				if os.Getuid() != 0 {
-					t.Skip("requires root privileges (network namespace and link creation)")
-				}
-
-				runtime.LockOSThread()
-				defer runtime.UnlockOSThread()
-				if err := netns.Set(testNS); err != nil {
-					t.Fatalf("failed to set netns: %v", err)
-				}
-			}
-
 			var mcvln Macvlan
 			got, gotErr := mcvln.IsSupported(t.Context(), tt.hostDevice, tt.deviceConfiguration)
 			if gotErr != nil {

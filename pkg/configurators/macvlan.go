@@ -45,6 +45,98 @@ var macvlanModeMap = map[v1alpha1.MacvlanMode]netlink.MacvlanMode{
 	v1alpha1.MacvlanModeSource:   netlink.MACVLAN_MODE_SOURCE,
 }
 
+// IsSupported reports whether the given host device can be configured
+// according to the given DeviceConfiguration.
+func (mcvln *Macvlan) IsSupported(
+	ctx context.Context,
+	hostDevice *host.Device,
+	deviceConfiguration *v1alpha1.DeviceConfiguration,
+) (bool, error) {
+	if hostDevice == nil {
+		return false, fmt.Errorf("hostDevice is nil")
+	}
+
+	if deviceConfiguration == nil {
+		return false, fmt.Errorf("deviceConfiguration is nil")
+	}
+
+	if v1alpha1.GetDeviceType(*deviceConfiguration) != v1alpha1.DeviceTypeMacvlan {
+		return false, nil
+	}
+
+	macvlanConfig := v1alpha1.GetMacvlan(*deviceConfiguration)
+	if _, ok := macvlanModeMap[*macvlanConfig.Mode]; !ok {
+		return false, nil
+	}
+
+	// The kernel only allows creating a macvlan on top of an Ethernet-type
+	// lower device; it rejects (EINVAL) non-Ethernet devices such as loopback or tunnels.
+	if hostDevice.Spec.LinkLayerType != "ether" {
+		return false, nil
+	}
+
+	// A device already enslaved to a bridge or bond has an rx_handler registered
+	// by its master; the kernel only allows one rx_handler per device, so adding
+	// a macvlan on top of it fails with EBUSY.
+	if hostDevice.Spec.MasterIndex != 0 {
+		return false, nil
+	}
+
+	return true, nil
+}
+
+// ExposedDevice configures the device which will be exposed in ResourceSlice.
+func (mcvln *Macvlan) ExposedDevice(
+	ctx context.Context,
+	hostDevice *host.Device,
+	device *resourcev1.Device,
+) (*resourcev1.Device, error) {
+	deviceRes := &resourcev1.Device{}
+	if device != nil {
+		deviceRes = device.DeepCopy()
+		if deviceRes.Attributes == nil {
+			deviceRes.Attributes = map[resourcev1.QualifiedName]resourcev1.DeviceAttribute{}
+		}
+		if deviceRes.Capacity == nil {
+			deviceRes.Capacity = map[resourcev1.QualifiedName]resourcev1.DeviceCapacity{}
+		}
+		if deviceRes.ConsumesCounters == nil {
+			deviceRes.ConsumesCounters = []resourcev1.DeviceCounterConsumption{}
+		}
+	} else {
+		deviceRes = &resourcev1.Device{
+			Attributes:       map[resourcev1.QualifiedName]resourcev1.DeviceAttribute{},
+			Capacity:         map[resourcev1.QualifiedName]resourcev1.DeviceCapacity{},
+			ConsumesCounters: []resourcev1.DeviceCounterConsumption{},
+		}
+	}
+
+	if hostDevice == nil {
+		return nil, fmt.Errorf("hostDevice is nil")
+	}
+
+	one := resource.MustParse("1")
+	maxVirtualDevices := resource.MustParse(fmt.Sprintf("%d", v1alpha1.MaxVirtualDevices))
+
+	deviceRes.AllowMultipleAllocations = ptr.To(true)
+	deviceRes.Capacity[resourcev1.QualifiedName(v1alpha1.NetworkInterfaceCapacityMaxVirtualInterfaces)] = resourcev1.DeviceCapacity{
+		Value: maxVirtualDevices,
+		RequestPolicy: &resourcev1.CapacityRequestPolicy{
+			Default:     &one,
+			ValidValues: []resource.Quantity{one},
+		},
+	}
+
+	deviceRes.ConsumesCounters = append(deviceRes.ConsumesCounters, resourcev1.DeviceCounterConsumption{
+		CounterSet: hostDevice.Name,
+		Counters: map[string]resourcev1.Counter{
+			"mutual-exclusion": {Value: one},
+		},
+	})
+
+	return deviceRes, nil
+}
+
 // Allocate allocates the network device by gathering the necessary information
 // and storing it in the ResourceClaim Device Status.
 //
@@ -105,58 +197,6 @@ func (mcvln *Macvlan) Allocate(
 	}
 
 	return allocatedDeviceStatusRes, nil
-}
-
-// ExposedDevice configures the device which will be exposed in ResourceSlice.
-func (mcvln *Macvlan) ExposedDevice(
-	ctx context.Context,
-	hostDevice *host.Device,
-	device *resourcev1.Device,
-) (*resourcev1.Device, error) {
-	deviceRes := &resourcev1.Device{}
-	if device != nil {
-		deviceRes = device.DeepCopy()
-		if deviceRes.Attributes == nil {
-			deviceRes.Attributes = map[resourcev1.QualifiedName]resourcev1.DeviceAttribute{}
-		}
-		if deviceRes.Capacity == nil {
-			deviceRes.Capacity = map[resourcev1.QualifiedName]resourcev1.DeviceCapacity{}
-		}
-		if deviceRes.ConsumesCounters == nil {
-			deviceRes.ConsumesCounters = []resourcev1.DeviceCounterConsumption{}
-		}
-	} else {
-		deviceRes = &resourcev1.Device{
-			Attributes:       map[resourcev1.QualifiedName]resourcev1.DeviceAttribute{},
-			Capacity:         map[resourcev1.QualifiedName]resourcev1.DeviceCapacity{},
-			ConsumesCounters: []resourcev1.DeviceCounterConsumption{},
-		}
-	}
-
-	if hostDevice == nil {
-		return nil, fmt.Errorf("hostDevice is nil")
-	}
-
-	one := resource.MustParse("1")
-	maxVirtualDevices := resource.MustParse(fmt.Sprintf("%d", v1alpha1.MaxVirtualDevices))
-
-	deviceRes.AllowMultipleAllocations = ptr.To(true)
-	deviceRes.Capacity[resourcev1.QualifiedName(v1alpha1.NetworkInterfaceCapacityMaxVirtualInterfaces)] = resourcev1.DeviceCapacity{
-		Value: maxVirtualDevices,
-		RequestPolicy: &resourcev1.CapacityRequestPolicy{
-			Default:     &one,
-			ValidValues: []resource.Quantity{one},
-		},
-	}
-
-	deviceRes.ConsumesCounters = append(deviceRes.ConsumesCounters, resourcev1.DeviceCounterConsumption{
-		CounterSet: hostDevice.Name,
-		Counters: map[string]resourcev1.Counter{
-			"mutual-exclusion": {Value: one},
-		},
-	})
-
-	return deviceRes, nil
 }
 
 // Configure configures the device.
@@ -244,49 +284,4 @@ func (mcvln *Macvlan) Release(
 	allocatedDeviceStatus *resourcev1.AllocatedDeviceStatus,
 ) (*resourcev1.AllocatedDeviceStatus, error) {
 	return allocatedDeviceStatus, nil
-}
-
-// IsSupported reports whether the given host device can be configured
-// according to the given DeviceConfiguration.
-func (mcvln *Macvlan) IsSupported(
-	ctx context.Context,
-	hostDevice *host.Device,
-	deviceConfiguration *v1alpha1.DeviceConfiguration,
-) (bool, error) {
-	if hostDevice == nil {
-		return false, fmt.Errorf("hostDevice is nil")
-	}
-
-	if deviceConfiguration == nil {
-		return false, fmt.Errorf("deviceConfiguration is nil")
-	}
-
-	if v1alpha1.GetDeviceType(*deviceConfiguration) != v1alpha1.DeviceTypeMacvlan {
-		return false, nil
-	}
-
-	macvlanConfig := v1alpha1.GetMacvlan(*deviceConfiguration)
-	if _, ok := macvlanModeMap[*macvlanConfig.Mode]; !ok {
-		return false, nil
-	}
-
-	link, err := netlink.LinkByName(hostDevice.Spec.InterfaceName)
-	if err != nil {
-		return false, fmt.Errorf("failed to get link %q: %v", hostDevice.Spec.InterfaceName, err)
-	}
-
-	// The kernel only allows creating a macvlan on top of an Ethernet-type
-	// lower device; it rejects (EINVAL) non-Ethernet devices such as loopback or tunnels.
-	if link.Attrs().EncapType != "ether" {
-		return false, nil
-	}
-
-	// A device already enslaved to a bridge or bond has an rx_handler registered
-	// by its master; the kernel only allows one rx_handler per device, so adding
-	// a macvlan on top of it fails with EBUSY.
-	if link.Attrs().MasterIndex != 0 {
-		return false, nil
-	}
-
-	return true, nil
 }
