@@ -40,7 +40,7 @@ const (
 // Resolver resolves all the DeviceNetwork, DeviceConfiguration, ExposedDevice and
 // status for a given ResourceClaim.
 type Resolver struct {
-	networkKind string
+	podNetworkKind string
 
 	resourceSliceIndexer cache.Indexer
 
@@ -62,13 +62,13 @@ type Device struct {
 }
 
 func NewResolver(
-	networkKind string,
+	podNetworkKind string,
 	resourceSliceInformer resourceinformers.ResourceSliceInformer,
 	deviceNetworkInformer v1alpha1devicenetworkinformers.DeviceNetworkInformer,
 	deviceCache *host.DeviceCache,
 ) (*Resolver, error) {
 	r := &Resolver{
-		networkKind:          networkKind,
+		podNetworkKind:       podNetworkKind,
 		resourceSliceIndexer: resourceSliceInformer.Informer().GetIndexer(),
 		deviceNetworkLister:  deviceNetworkInformer.Lister(),
 		resourceSliceSynced:  resourceSliceInformer.Informer().HasSynced,
@@ -94,7 +94,7 @@ func NewResolver(
 		},
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to add indexer for NetworkKind: %w", err)
+		return nil, fmt.Errorf("failed to add indexer for PodNetworkKind: %w", err)
 	}
 
 	return r, nil
@@ -174,8 +174,8 @@ func (r *Resolver) getDeviceNetworkForDevice(
 	if !ok || podNetwork.StringValue == nil {
 		return nil, nil, nil, nil, nil, fmt.Errorf("device %s does not have pod network attribute", device.Name)
 	}
-	networkKind, ok := device.Attributes[resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributeNetworkKind)]
-	if !ok || networkKind.StringValue == nil || *networkKind.StringValue != r.networkKind {
+	podNetworkKind, ok := device.Attributes[resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributePodNetworkKind)]
+	if !ok || podNetworkKind.StringValue == nil || *podNetworkKind.StringValue != r.podNetworkKind {
 		return nil, nil, nil, nil, nil, fmt.Errorf("device %s does not have the expected network kind attribute", device.Name)
 	}
 	deviceConfigurationName, ok := device.Attributes[resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributeDeviceConfiguration)]

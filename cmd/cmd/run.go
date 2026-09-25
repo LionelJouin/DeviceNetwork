@@ -46,12 +46,12 @@ const (
 )
 
 type runOptions struct {
-	pluginName    string
-	pluginIndex   string
-	networkKind   string
-	DRADriverName string
-	NodeName      string
-	verbosity     int
+	pluginName     string
+	pluginIndex    string
+	podNetworkKind string
+	DRADriverName  string
+	NodeName       string
+	verbosity      int
 }
 
 func newCmdRun() *cobra.Command {
@@ -81,10 +81,10 @@ func newCmdRun() *cobra.Command {
 	)
 
 	cmd.Flags().StringVar(
-		&runOpts.networkKind,
-		"network-kind",
+		&runOpts.podNetworkKind,
+		"pod-network-kind",
 		"devicenetwork-io-devicenetwork",
-		"Network kind.",
+		"Pod Network kind.",
 	)
 
 	cmd.Flags().StringVar(
@@ -148,7 +148,7 @@ func (ro *runOptions) run(ctx context.Context) error {
 	}
 
 	resolver, err := resolver.NewResolver(
-		ro.networkKind,
+		ro.podNetworkKind,
 		resourceSliceInformerFactory.Resource().V1().ResourceSlices(),
 		deviceNetworkInformerFactory.Devicenetwork().V1alpha1().DeviceNetworks(),
 		deviceCache,
@@ -192,7 +192,7 @@ func (ro *runOptions) run(ctx context.Context) error {
 
 	deviceNetworkController, err := devicenetwork.NewDeviceNetworkController(
 		ro.NodeName,
-		ro.networkKind,
+		ro.podNetworkKind,
 		deviceNetworkInformerFactory.Devicenetwork().V1alpha1().DeviceNetworks(),
 		nodeInformerFactory.Core().V1().Nodes(),
 		deviceCache,

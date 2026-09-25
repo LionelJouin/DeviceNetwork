@@ -115,7 +115,7 @@ var _ = Describe("DeviceNetwork", func() {
 			g.Expect(hostDevAttr.StringValue).NotTo(BeNil())
 			g.Expect(*hostDevAttr.StringValue).To(Equal(macvlanInterfaceName))
 
-			g.Expect(d.Attributes).To(HaveKey(resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributeNetworkKind)))
+			g.Expect(d.Attributes).To(HaveKey(resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributePodNetworkKind)))
 			g.Expect(d.Attributes).To(HaveKey(resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributeDeviceConfiguration)))
 		}).WithTimeout(30 * time.Second).WithPolling(time.Second).Should(Succeed())
 

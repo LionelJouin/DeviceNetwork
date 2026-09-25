@@ -302,3 +302,7 @@ func (d *Driver) allocateDevices(
 
 	return updatedResourceClaim, nil
 }
+
+func (d *Driver) WatchHealthStatus(ctx context.Context, reports chan<- kubeletplugin.DeviceHealthReport) error {
+	return kubeletplugin.ErrHealthNotSupported
+}

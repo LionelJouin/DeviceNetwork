@@ -18,7 +18,7 @@ set -o errexit
 set -o nounset
 set -o pipefail
 
-readonly VERSION="v2.11.4"
+readonly VERSION="v2.14.0"
 
 cd "$(git rev-parse --show-toplevel)" || exit 1
 

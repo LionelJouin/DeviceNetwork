@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-FROM golang:1.26 AS build
+FROM golang:1.27 AS build
 
 ENV GO111MODULE=on
 
@@ -26,7 +26,7 @@ COPY . .
 
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags "-extldflags -static" -o devicenetwork ./cmd
 
-FROM alpine:3.23
+FROM alpine:3.24
 
 COPY --from=build /app/devicenetwork .
 

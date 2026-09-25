@@ -127,12 +127,12 @@ var _ configurators.Configurator = (*fakeConfigurator)(nil)
 
 func TestDeviceNetworkReconciler_Reconcile(t *testing.T) {
 	macvlanType := v1alpha1.DeviceTypeMacvlan
-	networkKind := "DeviceNetwork"
+	podNetworkKind := "DeviceNetwork"
 
 	tests := []struct {
 		name                 string
 		nodeName             string
-		networkKind          string
+		podNetworkKind       string
 		nodeLister           corev1listers.NodeLister
 		deviceNetworkLister  deviceNetworkListers.DeviceNetworkLister
 		publishResourcesFunc devicenetwork.PublishResources
@@ -144,7 +144,7 @@ func TestDeviceNetworkReconciler_Reconcile(t *testing.T) {
 		{
 			name:                "node not found",
 			nodeName:            "missing-node",
-			networkKind:         networkKind,
+			podNetworkKind:      podNetworkKind,
 			nodeLister:          newNodeLister(),
 			deviceNetworkLister: newDeviceNetworkLister(),
 			deviceCache:         newDeviceCache(t),
@@ -152,9 +152,9 @@ func TestDeviceNetworkReconciler_Reconcile(t *testing.T) {
 			wantErr:             true,
 		},
 		{
-			name:        "no device networks",
-			nodeName:    "node-a",
-			networkKind: networkKind,
+			name:           "no device networks",
+			nodeName:       "node-a",
+			podNetworkKind: podNetworkKind,
 			nodeLister: newNodeLister(&corev1.Node{
 				ObjectMeta: metav1.ObjectMeta{Name: "node-a"},
 			}),
@@ -167,9 +167,9 @@ func TestDeviceNetworkReconciler_Reconcile(t *testing.T) {
 			wantErr:             false,
 		},
 		{
-			name:        "nil publishResourcesFunc succeeds",
-			nodeName:    "node-a",
-			networkKind: networkKind,
+			name:           "nil publishResourcesFunc succeeds",
+			nodeName:       "node-a",
+			podNetworkKind: podNetworkKind,
 			nodeLister: newNodeLister(&corev1.Node{
 				ObjectMeta: metav1.ObjectMeta{Name: "node-a"},
 			}),
@@ -180,9 +180,9 @@ func TestDeviceNetworkReconciler_Reconcile(t *testing.T) {
 			wantErr:              false,
 		},
 		{
-			name:        "publishResourcesFunc error",
-			nodeName:    "node-a",
-			networkKind: networkKind,
+			name:           "publishResourcesFunc error",
+			nodeName:       "node-a",
+			podNetworkKind: podNetworkKind,
 			nodeLister: newNodeLister(&corev1.Node{
 				ObjectMeta: metav1.ObjectMeta{Name: "node-a"},
 			}),
@@ -195,9 +195,9 @@ func TestDeviceNetworkReconciler_Reconcile(t *testing.T) {
 			wantErr:             true,
 		},
 		{
-			name:        "device network with matching device",
-			nodeName:    "node-a",
-			networkKind: networkKind,
+			name:           "device network with matching device",
+			nodeName:       "node-a",
+			podNetworkKind: podNetworkKind,
 			nodeLister: newNodeLister(&corev1.Node{
 				ObjectMeta: metav1.ObjectMeta{Name: "node-a"},
 			}),
@@ -243,7 +243,7 @@ func TestDeviceNetworkReconciler_Reconcile(t *testing.T) {
 									Attributes: map[resourcev1.QualifiedName]resourcev1.DeviceAttribute{
 										resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributeDeviceType):          {StringValue: &deviceType},
 										resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributePodNetwork):          {StringValue: &podNetwork},
-										resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributeNetworkKind):         {StringValue: &networkKind},
+										resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributePodNetworkKind):      {StringValue: &podNetworkKind},
 										resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributeDeviceConfiguration): {StringValue: &deviceCfg},
 										resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributeHostDeviceName):      {StringValue: &hostDevName},
 									},
@@ -261,9 +261,9 @@ func TestDeviceNetworkReconciler_Reconcile(t *testing.T) {
 			}(),
 		},
 		{
-			name:        "no configurator for device type",
-			nodeName:    "node-a",
-			networkKind: networkKind,
+			name:           "no configurator for device type",
+			nodeName:       "node-a",
+			podNetworkKind: podNetworkKind,
 			nodeLister: newNodeLister(&corev1.Node{
 				ObjectMeta: metav1.ObjectMeta{Name: "node-a"},
 			}),
@@ -305,9 +305,9 @@ func TestDeviceNetworkReconciler_Reconcile(t *testing.T) {
 			},
 		},
 		{
-			name:        "node selector does not match",
-			nodeName:    "node-a",
-			networkKind: networkKind,
+			name:           "node selector does not match",
+			nodeName:       "node-a",
+			podNetworkKind: podNetworkKind,
 			nodeLister: newNodeLister(&corev1.Node{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:   "node-a",
@@ -368,9 +368,9 @@ func TestDeviceNetworkReconciler_Reconcile(t *testing.T) {
 			// A single device matched by two DeviceSelectors, each referenced by a
 			// different DeviceConfiguration, is currently exposed once per
 			// DeviceConfiguration.
-			name:        "device matched by multiple selectors is configured multiple times",
-			nodeName:    "node-a",
-			networkKind: networkKind,
+			name:           "device matched by multiple selectors is configured multiple times",
+			nodeName:       "node-a",
+			podNetworkKind: podNetworkKind,
 			nodeLister: newNodeLister(&corev1.Node{
 				ObjectMeta: metav1.ObjectMeta{Name: "node-a"},
 			}),
@@ -422,7 +422,7 @@ func TestDeviceNetworkReconciler_Reconcile(t *testing.T) {
 										Attributes: map[resourcev1.QualifiedName]resourcev1.DeviceAttribute{
 											resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributeDeviceType):          {StringValue: &deviceType},
 											resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributePodNetwork):          {StringValue: &podNetwork},
-											resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributeNetworkKind):         {StringValue: &networkKind},
+											resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributePodNetworkKind):      {StringValue: &podNetworkKind},
 											resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributeDeviceConfiguration): {StringValue: &cfgA},
 											resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributeHostDeviceName):      {StringValue: &hostDevName},
 										},
@@ -432,7 +432,7 @@ func TestDeviceNetworkReconciler_Reconcile(t *testing.T) {
 										Attributes: map[resourcev1.QualifiedName]resourcev1.DeviceAttribute{
 											resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributeDeviceType):          {StringValue: &deviceType},
 											resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributePodNetwork):          {StringValue: &podNetwork},
-											resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributeNetworkKind):         {StringValue: &networkKind},
+											resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributePodNetworkKind):      {StringValue: &podNetworkKind},
 											resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributeDeviceConfiguration): {StringValue: &cfgB},
 											resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributeHostDeviceName):      {StringValue: &hostDevName},
 										},
@@ -454,9 +454,9 @@ func TestDeviceNetworkReconciler_Reconcile(t *testing.T) {
 			// A single device matched by two DeviceSelectors that are both
 			// referenced by the same DeviceConfiguration is currently exposed
 			// once.
-			name:        "device matched by multiple selectors in the same DeviceConfiguration",
-			nodeName:    "node-a",
-			networkKind: networkKind,
+			name:           "device matched by multiple selectors in the same DeviceConfiguration",
+			nodeName:       "node-a",
+			podNetworkKind: podNetworkKind,
 			nodeLister: newNodeLister(&corev1.Node{
 				ObjectMeta: metav1.ObjectMeta{Name: "node-a"},
 			}),
@@ -497,7 +497,7 @@ func TestDeviceNetworkReconciler_Reconcile(t *testing.T) {
 					Attributes: map[resourcev1.QualifiedName]resourcev1.DeviceAttribute{
 						resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributeDeviceType):          {StringValue: &deviceType},
 						resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributePodNetwork):          {StringValue: &podNetwork},
-						resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributeNetworkKind):         {StringValue: &networkKind},
+						resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributePodNetworkKind):      {StringValue: &podNetworkKind},
 						resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributeDeviceConfiguration): {StringValue: &cfg},
 						resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributeHostDeviceName):      {StringValue: &hostDevName},
 					},
@@ -534,7 +534,7 @@ func TestDeviceNetworkReconciler_Reconcile(t *testing.T) {
 				}
 			}
 
-			dnr, err := devicenetwork.NewDeviceNetworkReconciler(tt.nodeName, tt.networkKind, tt.nodeLister, tt.deviceNetworkLister, publish, tt.deviceCache, tt.deviceConfigurators)
+			dnr, err := devicenetwork.NewDeviceNetworkReconciler(tt.nodeName, tt.podNetworkKind, tt.nodeLister, tt.deviceNetworkLister, publish, tt.deviceCache, tt.deviceConfigurators)
 			if err != nil {
 				t.Fatalf("could not construct receiver type: %v", err)
 			}

@@ -22,8 +22,6 @@ metadata:
   name: demo-macvlan
   labels:
     app: demo-macvlan
-  annotations:
-    required-plugins.noderesource.dev/pod: '["devicenetwork"]'
 spec:
   replicas: 1
   selector:
@@ -33,6 +31,9 @@ spec:
     metadata:
       labels:
         app: demo-macvlan
+      # annotations:
+      #   required-plugins.noderesource.dev/pod: '["devicenetwork"]'
+      #   required-plugins.noderesource.dev: '["devicenetwork"]'
     spec:
       tolerations:
       - operator: Exists

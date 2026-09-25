@@ -33,11 +33,39 @@ import (
 )
 
 // DeviceNetworkInformer provides access to a shared informer and lister for
-// DeviceNetworks.
+// DeviceNetworks. Prefer using the type-safe variant (see [TypedDeviceNetworkInformer]).
 type DeviceNetworkInformer interface {
 	Informer() cache.SharedIndexInformer
 	Lister() apisv1alpha1.DeviceNetworkLister
 }
+
+// TypedDeviceNetworkInformer provides access to a shared informer and lister for
+// DeviceNetworks, including the type-safe TypedInformer variant.
+// It is a superset of DeviceNetworkInformer.
+type TypedDeviceNetworkInformer interface {
+	Informer() cache.SharedIndexInformer
+	TypedInformer() DeviceNetworkIndexInformer
+	Lister() apisv1alpha1.DeviceNetworkLister
+}
+
+// DeviceNetworkIndexInformer is a wrapper around the underlying [cache.SharedIndexInformer]
+// with type-safe variants of several methods.
+type DeviceNetworkIndexInformer cache.TypedSharedIndexInformer[*devicenetworkapisv1alpha1.DeviceNetwork]
+
+// DeviceNetworkHandlerFuncs is a specialization of [cache.TypedResourceEventHandlerFuncs] for DeviceNetwork.
+type DeviceNetworkHandlerFuncs = cache.TypedResourceEventHandlerFuncs[*devicenetworkapisv1alpha1.DeviceNetwork]
+
+// DeviceNetworkDetailedHandlerFuncs is a specialization of [cache.TypedResourceEventHandlerDetailedFuncs] for DeviceNetwork.
+type DeviceNetworkDetailedHandlerFuncs = cache.TypedResourceEventHandlerDetailedFuncs[*devicenetworkapisv1alpha1.DeviceNetwork]
+
+// DeviceNetworkFilteringHandler is a specialization of [cache.TypedFilteringResourceEventHandler] for DeviceNetwork.
+type DeviceNetworkFilteringHandler = cache.TypedFilteringResourceEventHandler[*devicenetworkapisv1alpha1.DeviceNetwork]
+
+// DeviceNetworkIndexers is a specialization of [cache.TypedIndexers] for DeviceNetwork.
+type DeviceNetworkIndexers = cache.TypedIndexers[*devicenetworkapisv1alpha1.DeviceNetwork]
+
+// DeletedDeviceNetwork is a specialization of [cache.DeletedObject] for DeviceNetwork.
+type DeletedDeviceNetwork = cache.DeletedObject[*devicenetworkapisv1alpha1.DeviceNetwork]
 
 type deviceNetworkInformer struct {
 	factory          internalinterfaces.SharedInformerFactory
@@ -47,25 +75,49 @@ type deviceNetworkInformer struct {
 // NewDeviceNetworkInformer constructs a new informer for DeviceNetwork type.
 // Always prefer using an informer factory to get a shared informer instead of getting an independent
 // one. This reduces memory footprint and number of connections to the server.
+// If you really need an independent one, prefer using the type-safe variant (see [NewTypedDeviceNetworkInformer]).
 func NewDeviceNetworkInformer(client versioned.Interface, resyncPeriod time.Duration, indexers cache.Indexers) cache.SharedIndexInformer {
 	return NewDeviceNetworkInformerWithOptions(client, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: indexers})
+}
+
+// NewTypedDeviceNetworkInformer constructs a new informer for DeviceNetwork type.
+// Always prefer using an informer factory to get a shared informer instead of getting an independent
+// one. This reduces memory footprint and number of connections to the server.
+func NewTypedDeviceNetworkInformer(client versioned.Interface, resyncPeriod time.Duration, indexers DeviceNetworkIndexers) DeviceNetworkIndexInformer {
+	return NewTypedDeviceNetworkInformerWithOptions(client, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: cache.TypedIndexersToIndexers(indexers)})
 }
 
 // NewFilteredDeviceNetworkInformer constructs a new informer for DeviceNetwork type.
 // Always prefer using an informer factory to get a shared informer instead of getting an independent
 // one. This reduces memory footprint and number of connections to the server.
+// If you really need an independent one, prefer using the type-safe variant (see [NewTypedFilteredDeviceNetworkInformer]).
 func NewFilteredDeviceNetworkInformer(client versioned.Interface, resyncPeriod time.Duration, indexers cache.Indexers, tweakListOptions internalinterfaces.TweakListOptionsFunc) cache.SharedIndexInformer {
-	return NewDeviceNetworkInformerWithOptions(client, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: indexers, TweakListOptions: tweakListOptions})
+	return NewTypedDeviceNetworkInformerWithOptions(client, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: indexers, TweakListOptions: tweakListOptions})
+}
+
+// NewTypedFilteredDeviceNetworkInformer constructs a new informer for DeviceNetwork type.
+// Always prefer using an informer factory to get a shared informer instead of getting an independent
+// one. This reduces memory footprint and number of connections to the server.
+func NewTypedFilteredDeviceNetworkInformer(client versioned.Interface, resyncPeriod time.Duration, indexers DeviceNetworkIndexers, tweakListOptions internalinterfaces.TweakListOptionsFunc) DeviceNetworkIndexInformer {
+	return NewTypedDeviceNetworkInformerWithOptions(client, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: cache.TypedIndexersToIndexers(indexers), TweakListOptions: tweakListOptions})
 }
 
 // NewDeviceNetworkInformerWithOptions constructs a new informer for DeviceNetwork type with additional options.
 // Always prefer using an informer factory to get a shared informer instead of getting an independent
 // one. This reduces memory footprint and number of connections to the server.
+// If you really need an independent one, prefer using the type-safe variant (see [NewTypedDeviceNetworkInformerWithOptions]).
 func NewDeviceNetworkInformerWithOptions(client versioned.Interface, options internalinterfaces.InformerOptions) cache.SharedIndexInformer {
+	return NewTypedDeviceNetworkInformerWithOptions(client, options)
+}
+
+// NewTypedDeviceNetworkInformerWithOptions constructs a new informer for DeviceNetwork type with additional options.
+// Always prefer using an informer factory to get a shared informer instead of getting an independent
+// one. This reduces memory footprint and number of connections to the server.
+func NewTypedDeviceNetworkInformerWithOptions(client versioned.Interface, options internalinterfaces.InformerOptions) DeviceNetworkIndexInformer {
 	gvr := schema.GroupVersionResource{Group: "devicenetwork.io", Version: "v1alpha1", Resource: "devicenetworks"}
 	identifier := options.InformerName.WithResource(gvr)
 	tweakListOptions := options.TweakListOptions
-	return cache.NewSharedIndexInformerWithOptions(
+	return cache.NewTypedSharedIndexInformer[*devicenetworkapisv1alpha1.DeviceNetwork](cache.NewSharedIndexInformerWithOptions(
 		cache.ToListWatcherWithWatchListSemantics(&cache.ListWatch{
 			ListFunc: func(opts v1.ListOptions) (runtime.Object, error) {
 				if tweakListOptions != nil {
@@ -98,17 +150,57 @@ func NewDeviceNetworkInformerWithOptions(client versioned.Interface, options int
 			Indexers:     options.Indexers,
 			Identifier:   identifier,
 		},
-	)
+	))
 }
 
 func (f *deviceNetworkInformer) defaultInformer(client versioned.Interface, resyncPeriod time.Duration) cache.SharedIndexInformer {
-	return NewDeviceNetworkInformerWithOptions(client, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc}, InformerName: f.factory.InformerName(), TweakListOptions: f.tweakListOptions})
+	return NewTypedDeviceNetworkInformerWithOptions(client, internalinterfaces.InformerOptions{ResyncPeriod: resyncPeriod, Indexers: cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc}, InformerName: f.factory.InformerName(), TweakListOptions: f.tweakListOptions})
 }
 
 func (f *deviceNetworkInformer) Informer() cache.SharedIndexInformer {
-	return f.factory.InformerFor(&devicenetworkapisv1alpha1.DeviceNetwork{}, f.defaultInformer)
+	return f.TypedInformer()
+}
+
+func (f *deviceNetworkInformer) TypedInformer() DeviceNetworkIndexInformer {
+	return cache.NewTypedSharedIndexInformer[*devicenetworkapisv1alpha1.DeviceNetwork](f.factory.InformerFor(&devicenetworkapisv1alpha1.DeviceNetwork{}, f.defaultInformer))
 }
 
 func (f *deviceNetworkInformer) Lister() apisv1alpha1.DeviceNetworkLister {
 	return apisv1alpha1.NewDeviceNetworkLister(f.Informer().GetIndexer())
+}
+
+// ToTypedDeviceNetworkInformer converts an untyped informer into a TypedDeviceNetworkInformer.
+//
+// WARNING: this conversion is only safe if the informer handles objects of type
+// *DeviceNetwork. If that is not the case, calling type-safe methods of the returned
+// TypedDeviceNetworkInformer leads to runtime panics. A safer alternative is to pass
+// around a TypedDeviceNetworkInformer instances that was obtained from a
+// SharedInformerFactory.
+func ToTypedDeviceNetworkInformer(informer DeviceNetworkInformer) TypedDeviceNetworkInformer {
+	if informer, ok := informer.(TypedDeviceNetworkInformer); ok {
+		return informer
+	}
+	return &deviceNetworkTypedInformerAdapter{informer}
+}
+
+type deviceNetworkTypedInformerAdapter struct {
+	DeviceNetworkInformer
+}
+
+func (a *deviceNetworkTypedInformerAdapter) TypedInformer() DeviceNetworkIndexInformer {
+	return cache.NewTypedSharedIndexInformer[*devicenetworkapisv1alpha1.DeviceNetwork](a.Informer())
+}
+
+// ToDeviceNetworkIndexInformer converts an untyped informer into a DeviceNetworkIndexInformer.
+//
+// WARNING: this conversion is only safe if the informer handles objects of type
+// *DeviceNetwork. If that is not the case, calling type-safe methods of the returned
+// DeviceNetworkIndexInformer leads to runtime panics. A safer alternative is to pass
+// around a DeviceNetworkIndexInformer instances that was obtained from a
+// SharedInformerFactory.
+func ToDeviceNetworkIndexInformer(informer cache.SharedIndexInformer) DeviceNetworkIndexInformer {
+	if informer, ok := informer.(DeviceNetworkIndexInformer); ok {
+		return informer
+	}
+	return cache.NewTypedSharedIndexInformer[*devicenetworkapisv1alpha1.DeviceNetwork](informer)
 }

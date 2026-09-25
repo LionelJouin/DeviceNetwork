@@ -39,7 +39,7 @@ import (
 func newResolver(
 	ctx context.Context,
 	t *testing.T,
-	networkKind string,
+	podNetworkKind string,
 	initialResourceSlices []runtime.Object,
 	initialDeviceNetworks []runtime.Object,
 	initialDeviceObjects []runtime.Object,
@@ -63,7 +63,7 @@ func newResolver(
 	}
 
 	r, err := resolver.NewResolver(
-		networkKind,
+		podNetworkKind,
 		kubeInformerFactory.Resource().V1().ResourceSlices(),
 		deviceNetworkInformerFactory.Devicenetwork().V1alpha1().DeviceNetworks(),
 		deviceCache,
@@ -86,10 +86,10 @@ func newResolver(
 }
 
 func TestGetDevices(t *testing.T) {
-	makeAttrs := func(podNetwork, networkKind, deviceConfig, hostDeviceName string) map[resourcev1.QualifiedName]resourcev1.DeviceAttribute {
+	makeAttrs := func(podNetwork, podNetworkKind, deviceConfig, hostDeviceName string) map[resourcev1.QualifiedName]resourcev1.DeviceAttribute {
 		return map[resourcev1.QualifiedName]resourcev1.DeviceAttribute{
 			resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributePodNetwork):          {StringValue: ptr.To(podNetwork)},
-			resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributeNetworkKind):         {StringValue: ptr.To(networkKind)},
+			resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributePodNetworkKind):      {StringValue: ptr.To(podNetworkKind)},
 			resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributeDeviceConfiguration): {StringValue: ptr.To(deviceConfig)},
 			resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributeHostDeviceName):      {StringValue: ptr.To(hostDeviceName)},
 		}
@@ -112,7 +112,7 @@ func TestGetDevices(t *testing.T) {
 
 	tests := []struct {
 		name                  string
-		networkKind           string
+		podNetworkKind        string
 		initialResourceSlices []runtime.Object
 		initialDeviceNetworks []runtime.Object
 		initialDeviceObjects  []runtime.Object
@@ -122,9 +122,9 @@ func TestGetDevices(t *testing.T) {
 		wantErr               bool
 	}{
 		{
-			name:        "single device resolved",
-			networkKind: "DeviceNetwork",
-			driverName:  "test-driver",
+			name:           "single device resolved",
+			podNetworkKind: "DeviceNetwork",
+			driverName:     "test-driver",
 			initialResourceSlices: []runtime.Object{
 				&resourcev1.ResourceSlice{
 					ObjectMeta: metav1.ObjectMeta{Name: "slice-0"},
@@ -157,9 +157,9 @@ func TestGetDevices(t *testing.T) {
 			},
 		},
 		{
-			name:        "driver name does not match skips device",
-			networkKind: "DeviceNetwork",
-			driverName:  "other-driver",
+			name:           "driver name does not match skips device",
+			podNetworkKind: "DeviceNetwork",
+			driverName:     "other-driver",
 			initialResourceSlices: []runtime.Object{
 				&resourcev1.ResourceSlice{
 					ObjectMeta: metav1.ObjectMeta{Name: "slice-0"},
@@ -184,9 +184,9 @@ func TestGetDevices(t *testing.T) {
 			want: nil,
 		},
 		{
-			name:        "device not found in any resource slice returns error",
-			networkKind: "DeviceNetwork",
-			driverName:  "test-driver",
+			name:           "device not found in any resource slice returns error",
+			podNetworkKind: "DeviceNetwork",
+			driverName:     "test-driver",
 			claim: &resourcev1.ResourceClaim{
 				Status: resourcev1.ResourceClaimStatus{
 					Allocation: &resourcev1.AllocationResult{
@@ -199,9 +199,9 @@ func TestGetDevices(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name:        "missing pod network attribute returns error",
-			networkKind: "DeviceNetwork",
-			driverName:  "test-driver",
+			name:           "missing pod network attribute returns error",
+			podNetworkKind: "DeviceNetwork",
+			driverName:     "test-driver",
 			initialResourceSlices: []runtime.Object{
 				&resourcev1.ResourceSlice{
 					ObjectMeta: metav1.ObjectMeta{Name: "slice-0"},
@@ -212,7 +212,7 @@ func TestGetDevices(t *testing.T) {
 							{
 								Name: "dev-0",
 								Attributes: map[resourcev1.QualifiedName]resourcev1.DeviceAttribute{
-									resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributeNetworkKind):         {StringValue: ptr.To("DeviceNetwork")},
+									resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributePodNetworkKind):      {StringValue: ptr.To("DeviceNetwork")},
 									resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributeDeviceConfiguration): {StringValue: ptr.To("config-0")},
 									resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributeHostDeviceName):      {StringValue: ptr.To("eth0")},
 								},
@@ -233,9 +233,9 @@ func TestGetDevices(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name:        "wrong network kind returns error",
-			networkKind: "DeviceNetwork",
-			driverName:  "test-driver",
+			name:           "wrong network kind returns error",
+			podNetworkKind: "DeviceNetwork",
+			driverName:     "test-driver",
 			initialResourceSlices: []runtime.Object{
 				&resourcev1.ResourceSlice{
 					ObjectMeta: metav1.ObjectMeta{Name: "slice-0"},
@@ -247,7 +247,7 @@ func TestGetDevices(t *testing.T) {
 								Name: "dev-0",
 								Attributes: map[resourcev1.QualifiedName]resourcev1.DeviceAttribute{
 									resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributePodNetwork):          {StringValue: ptr.To("test-dn")},
-									resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributeNetworkKind):         {StringValue: ptr.To("WrongKind")},
+									resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributePodNetworkKind):      {StringValue: ptr.To("WrongKind")},
 									resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributeDeviceConfiguration): {StringValue: ptr.To("config-0")},
 									resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributeHostDeviceName):      {StringValue: ptr.To("eth0")},
 								},
@@ -268,9 +268,9 @@ func TestGetDevices(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name:        "missing device configuration attribute returns error",
-			networkKind: "DeviceNetwork",
-			driverName:  "test-driver",
+			name:           "missing device configuration attribute returns error",
+			podNetworkKind: "DeviceNetwork",
+			driverName:     "test-driver",
 			initialResourceSlices: []runtime.Object{
 				&resourcev1.ResourceSlice{
 					ObjectMeta: metav1.ObjectMeta{Name: "slice-0"},
@@ -282,7 +282,7 @@ func TestGetDevices(t *testing.T) {
 								Name: "dev-0",
 								Attributes: map[resourcev1.QualifiedName]resourcev1.DeviceAttribute{
 									resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributePodNetwork):     {StringValue: ptr.To("test-dn")},
-									resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributeNetworkKind):    {StringValue: ptr.To("DeviceNetwork")},
+									resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributePodNetworkKind): {StringValue: ptr.To("DeviceNetwork")},
 									resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributeHostDeviceName): {StringValue: ptr.To("eth0")},
 								},
 							},
@@ -302,9 +302,9 @@ func TestGetDevices(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name:        "missing host device name attribute returns error",
-			networkKind: "DeviceNetwork",
-			driverName:  "test-driver",
+			name:           "missing host device name attribute returns error",
+			podNetworkKind: "DeviceNetwork",
+			driverName:     "test-driver",
 			initialResourceSlices: []runtime.Object{
 				&resourcev1.ResourceSlice{
 					ObjectMeta: metav1.ObjectMeta{Name: "slice-0"},
@@ -316,7 +316,7 @@ func TestGetDevices(t *testing.T) {
 								Name: "dev-0",
 								Attributes: map[resourcev1.QualifiedName]resourcev1.DeviceAttribute{
 									resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributePodNetwork):          {StringValue: ptr.To("test-dn")},
-									resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributeNetworkKind):         {StringValue: ptr.To("DeviceNetwork")},
+									resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributePodNetworkKind):      {StringValue: ptr.To("DeviceNetwork")},
 									resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributeDeviceConfiguration): {StringValue: ptr.To("config-0")},
 								},
 							},
@@ -336,9 +336,9 @@ func TestGetDevices(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name:        "host device not in cache returns error",
-			networkKind: "DeviceNetwork",
-			driverName:  "test-driver",
+			name:           "host device not in cache returns error",
+			podNetworkKind: "DeviceNetwork",
+			driverName:     "test-driver",
 			initialResourceSlices: []runtime.Object{
 				&resourcev1.ResourceSlice{
 					ObjectMeta: metav1.ObjectMeta{Name: "slice-0"},
@@ -362,9 +362,9 @@ func TestGetDevices(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name:        "device network not found returns error",
-			networkKind: "DeviceNetwork",
-			driverName:  "test-driver",
+			name:           "device network not found returns error",
+			podNetworkKind: "DeviceNetwork",
+			driverName:     "test-driver",
 			initialResourceSlices: []runtime.Object{
 				&resourcev1.ResourceSlice{
 					ObjectMeta: metav1.ObjectMeta{Name: "slice-0"},
@@ -388,9 +388,9 @@ func TestGetDevices(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name:        "multiple devices resolved from same slice",
-			networkKind: "DeviceNetwork",
-			driverName:  "test-driver",
+			name:           "multiple devices resolved from same slice",
+			podNetworkKind: "DeviceNetwork",
+			driverName:     "test-driver",
 			initialResourceSlices: []runtime.Object{
 				&resourcev1.ResourceSlice{
 					ObjectMeta: metav1.ObjectMeta{Name: "slice-0"},
@@ -439,9 +439,9 @@ func TestGetDevices(t *testing.T) {
 			},
 		},
 		{
-			name:        "non-network device returns error",
-			networkKind: "DeviceNetwork",
-			driverName:  "test-driver",
+			name:           "non-network device returns error",
+			podNetworkKind: "DeviceNetwork",
+			driverName:     "test-driver",
 			initialResourceSlices: []runtime.Object{
 				&resourcev1.ResourceSlice{
 					ObjectMeta: metav1.ObjectMeta{Name: "slice-0"},
@@ -474,9 +474,9 @@ func TestGetDevices(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name:        "device with allocated device status",
-			networkKind: "DeviceNetwork",
-			driverName:  "test-driver",
+			name:           "device with allocated device status",
+			podNetworkKind: "DeviceNetwork",
+			driverName:     "test-driver",
 			initialResourceSlices: []runtime.Object{
 				&resourcev1.ResourceSlice{
 					ObjectMeta: metav1.ObjectMeta{Name: "slice-0"},
@@ -513,9 +513,9 @@ func TestGetDevices(t *testing.T) {
 			},
 		},
 		{
-			name:        "devices from different device networks",
-			networkKind: "DeviceNetwork",
-			driverName:  "test-driver",
+			name:           "devices from different device networks",
+			podNetworkKind: "DeviceNetwork",
+			driverName:     "test-driver",
 			initialResourceSlices: []runtime.Object{
 				&resourcev1.ResourceSlice{
 					ObjectMeta: metav1.ObjectMeta{Name: "slice-0"},
@@ -573,9 +573,9 @@ func TestGetDevices(t *testing.T) {
 			},
 		},
 		{
-			name:        "device configuration not found in device network returns error",
-			networkKind: "DeviceNetwork",
-			driverName:  "test-driver",
+			name:           "device configuration not found in device network returns error",
+			podNetworkKind: "DeviceNetwork",
+			driverName:     "test-driver",
 			initialResourceSlices: []runtime.Object{
 				&resourcev1.ResourceSlice{
 					ObjectMeta: metav1.ObjectMeta{Name: "slice-0"},
@@ -613,7 +613,7 @@ func TestGetDevices(t *testing.T) {
 			r := newResolver(
 				ctx,
 				t,
-				tt.networkKind,
+				tt.podNetworkKind,
 				tt.initialResourceSlices,
 				tt.initialDeviceNetworks,
 				tt.initialDeviceObjects,

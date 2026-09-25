@@ -24,7 +24,7 @@ import (
 // Interface provides access to all the informers in this group version.
 type Interface interface {
 	// DeviceNetworks returns a DeviceNetworkInformer.
-	DeviceNetworks() DeviceNetworkInformer
+	DeviceNetworks() TypedDeviceNetworkInformer
 }
 
 type version struct {
@@ -38,7 +38,7 @@ func New(f internalinterfaces.SharedInformerFactory, namespace string, tweakList
 	return &version{factory: f, namespace: namespace, tweakListOptions: tweakListOptions}
 }
 
-// DeviceNetworks returns a DeviceNetworkInformer.
-func (v *version) DeviceNetworks() DeviceNetworkInformer {
+// DeviceNetworks returns a TypedDeviceNetworkInformer.
+func (v *version) DeviceNetworks() TypedDeviceNetworkInformer {
 	return &deviceNetworkInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
 }

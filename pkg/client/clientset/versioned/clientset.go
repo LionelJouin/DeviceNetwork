@@ -28,7 +28,7 @@ import (
 )
 
 type Interface interface {
-	Discovery() discovery.DiscoveryInterface
+	Discovery() discovery.DiscoveryInterfaces
 	DevicenetworkV1alpha1() devicenetworkv1alpha1.DevicenetworkV1alpha1Interface
 }
 
@@ -44,7 +44,7 @@ func (c *Clientset) DevicenetworkV1alpha1() devicenetworkv1alpha1.DevicenetworkV
 }
 
 // Discovery retrieves the DiscoveryClient
-func (c *Clientset) Discovery() discovery.DiscoveryInterface {
+func (c *Clientset) Discovery() discovery.DiscoveryInterfaces {
 	if c == nil {
 		return nil
 	}

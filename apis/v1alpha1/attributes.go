@@ -41,11 +41,11 @@ const (
 	// The value type of this attribute is string.
 	// This attribute is always present for devices created from a DeviceNetwork.
 	NetworkInterfaceAttributePodNetwork NetworkInterfaceAttribute = NetworkInterfaceAttribute(multinetworkv1alpha1.StandardDeviceAttributePodNetwork)
-	// NetworkInterfaceAttributeNetworkKind represents the type of the object used to configure this device.
+	// NetworkInterfaceAttributePodNetworkKind represents the type of the object used to configure this device.
 	// The value will always be "DeviceNetwork".
 	// The value type of this attribute is string.
 	// This attribute is always present for devices created from a DeviceNetwork.
-	NetworkInterfaceAttributeNetworkKind NetworkInterfaceAttribute = NetworkInterfaceAttribute(multinetworkv1alpha1.StandardDeviceAttributeNetworkKind)
+	NetworkInterfaceAttributePodNetworkKind NetworkInterfaceAttribute = NetworkInterfaceAttribute(multinetworkv1alpha1.StandardDeviceAttributePodNetworkKind)
 	// DeviceConfiguration represents the configuration name in the DeviceNetwork
 	// object used to configure this device.
 	// The value type of this attribute is string.

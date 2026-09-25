@@ -41,7 +41,7 @@ type PublishResources func(context.Context, resourceslice.DriverResources) error
 type DeviceNetworkReconciler struct {
 	nodeName string
 
-	networkKind string
+	podNetworkKind string
 
 	deviceCache *host.DeviceCache
 
@@ -56,7 +56,7 @@ type DeviceNetworkReconciler struct {
 
 func NewDeviceNetworkReconciler(
 	nodeName string,
-	networkKind string,
+	podNetworkKind string,
 	nodeLister corev1listers.NodeLister,
 	deviceNetworkLister deviceNetworkListers.DeviceNetworkLister,
 	publishResourcesFunc PublishResources,
@@ -65,7 +65,7 @@ func NewDeviceNetworkReconciler(
 ) (*DeviceNetworkReconciler, error) {
 	dnr := &DeviceNetworkReconciler{
 		nodeName:             nodeName,
-		networkKind:          networkKind,
+		podNetworkKind:       podNetworkKind,
 		nodeLister:           nodeLister,
 		deviceNetworkLister:  deviceNetworkLister,
 		publishResourcesFunc: publishResourcesFunc,
@@ -165,7 +165,7 @@ func (dnr *DeviceNetworkReconciler) getResources(
 
 				resourceDevice.Attributes[resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributeDeviceType)] = resourcev1.DeviceAttribute{StringValue: (*string)(&deviceType)}
 				resourceDevice.Attributes[resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributePodNetwork)] = resourcev1.DeviceAttribute{StringValue: &deviceNetwork.Name}
-				resourceDevice.Attributes[resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributeNetworkKind)] = resourcev1.DeviceAttribute{StringValue: &dnr.networkKind}
+				resourceDevice.Attributes[resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributePodNetworkKind)] = resourcev1.DeviceAttribute{StringValue: &dnr.podNetworkKind}
 				resourceDevice.Attributes[resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributeDeviceConfiguration)] = resourcev1.DeviceAttribute{StringValue: &deviceConfiguration.Name}
 				resourceDevice.Attributes[resourcev1.QualifiedName(v1alpha1.NetworkInterfaceAttributeHostDeviceName)] = resourcev1.DeviceAttribute{StringValue: &dvc.Name}
 
