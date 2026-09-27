@@ -17,6 +17,7 @@ limitations under the License.
 package configurators
 
 import (
+	"net"
 	"os"
 	"reflect"
 	"runtime"
@@ -218,11 +219,13 @@ func TestHostDevice_Allocate(t *testing.T) {
 
 	tests := []struct {
 		name                          string
+		commonConfigurator            *CommonConfigurator
 		hostDevice                    *host.Device
 		deviceConfiguration           *v1alpha1.DeviceConfiguration
 		networkInterfaceConfiguration *v1alpha1.NetworkInterfaceConfiguration
 		allocatedDeviceStatus         *resourcev1.AllocatedDeviceStatus
 		want                          *resourcev1.AllocatedDeviceStatus
+		verify                        func(t *testing.T, got *resourcev1.AllocatedDeviceStatus)
 		wantErr                       bool
 	}{
 		{
@@ -230,15 +233,8 @@ func TestHostDevice_Allocate(t *testing.T) {
 			hostDevice:            &host.Device{Spec: host.DeviceSpec{InterfaceName: "net1"}},
 			deviceConfiguration:   &v1alpha1.DeviceConfiguration{DeviceType: &deviceType},
 			allocatedDeviceStatus: hostDeviceDevice0,
-			want: func() *resourcev1.AllocatedDeviceStatus {
-				allocatedDeviceStatus := hostDeviceDevice0.DeepCopy()
-				allocatedDeviceStatus.Data = getRawExtension(&status.ResourceClaimDeviceStatusData{
-					DeviceConfiguration: &v1alpha1.DeviceConfiguration{DeviceType: ptr.To(v1alpha1.DeviceTypeHostDevice)},
-					Device:              &host.Device{Spec: host.DeviceSpec{InterfaceName: "net1"}},
-				})
-				return allocatedDeviceStatus
-			}(),
-			wantErr: false,
+			want:                  hostDeviceDevice0.DeepCopy(),
+			wantErr:               false,
 		},
 		{
 			name:                "network data defaults to the host device interface name when unset",
@@ -252,12 +248,101 @@ func TestHostDevice_Allocate(t *testing.T) {
 				Driver: "devicenetwork.io", Pool: "pool0", Device: "device0", ShareID: ptr.To("sharedID0"),
 				NetworkData: &resourcev1.NetworkDeviceData{InterfaceName: "net1"},
 				Conditions:  []metav1.Condition{},
-				Data: getRawExtension(&status.ResourceClaimDeviceStatusData{
-					DeviceConfiguration: &v1alpha1.DeviceConfiguration{DeviceType: ptr.To(v1alpha1.DeviceTypeHostDevice)},
-					Device:              &host.Device{Spec: host.DeviceSpec{InterfaceName: "net1"}},
-				}),
 			},
 			wantErr: false,
+		},
+		{
+			name:                "network data interface name is always set to host device interface name",
+			hostDevice:          &host.Device{Spec: host.DeviceSpec{InterfaceName: "net1"}},
+			deviceConfiguration: &v1alpha1.DeviceConfiguration{DeviceType: &deviceType},
+			allocatedDeviceStatus: &resourcev1.AllocatedDeviceStatus{
+				Driver: "devicenetwork.io", Pool: "pool0", Device: "device0", ShareID: ptr.To("sharedID0"),
+				NetworkData: &resourcev1.NetworkDeviceData{InterfaceName: "custom-net"},
+				Conditions:  []metav1.Condition{},
+			},
+			want: &resourcev1.AllocatedDeviceStatus{
+				Driver: "devicenetwork.io", Pool: "pool0", Device: "device0", ShareID: ptr.To("sharedID0"),
+				NetworkData: &resourcev1.NetworkDeviceData{InterfaceName: "net1"},
+				Conditions:  []metav1.Condition{},
+			},
+			wantErr: false,
+		},
+		{
+			name:                "with CommonConfigurator and Random IPAM allocates IP",
+			commonConfigurator:  &CommonConfigurator{},
+			hostDevice:          &host.Device{Spec: host.DeviceSpec{InterfaceName: "net1"}},
+			deviceConfiguration: &v1alpha1.DeviceConfiguration{DeviceType: &deviceType},
+			networkInterfaceConfiguration: &v1alpha1.NetworkInterfaceConfiguration{
+				IPAM: []*v1alpha1.IPAM{
+					{
+						Provider: v1alpha1.IPAMProviderRandom,
+						Random:   &v1alpha1.RandomIPAM{CIDR: "192.168.10.0/24"},
+					},
+				},
+			},
+			allocatedDeviceStatus: hostDeviceDevice0.DeepCopy(),
+			verify: func(t *testing.T, got *resourcev1.AllocatedDeviceStatus) {
+				t.Helper()
+				if got.NetworkData == nil {
+					t.Fatalf("expected non-nil NetworkData")
+				}
+				if got.NetworkData.InterfaceName != "net1" {
+					t.Errorf("expected InterfaceName net1, got %s", got.NetworkData.InterfaceName)
+				}
+				if len(got.NetworkData.IPs) != 1 {
+					t.Fatalf("expected 1 allocated IP, got %d", len(got.NetworkData.IPs))
+				}
+				ip, ipNet, err := net.ParseCIDR(got.NetworkData.IPs[0])
+				if err != nil {
+					t.Fatalf("failed to parse allocated IP %s: %v", got.NetworkData.IPs[0], err)
+				}
+				_, expectedNet, _ := net.ParseCIDR("192.168.10.0/24")
+				if !expectedNet.Contains(ip) || ipNet.String() != expectedNet.String() {
+					t.Errorf("allocated IP %s is not in %s", got.NetworkData.IPs[0], "192.168.10.0/24")
+				}
+			},
+			wantErr: false,
+		},
+		{
+			name:                "with CommonConfigurator returns error on invalid IPAM CIDR",
+			commonConfigurator:  &CommonConfigurator{},
+			hostDevice:          &host.Device{Spec: host.DeviceSpec{InterfaceName: "net1"}},
+			deviceConfiguration: &v1alpha1.DeviceConfiguration{DeviceType: &deviceType},
+			networkInterfaceConfiguration: &v1alpha1.NetworkInterfaceConfiguration{
+				IPAM: []*v1alpha1.IPAM{
+					{
+						Provider: v1alpha1.IPAMProviderRandom,
+						Random:   &v1alpha1.RandomIPAM{CIDR: "invalid-cidr"},
+					},
+				},
+			},
+			allocatedDeviceStatus: hostDeviceDevice0.DeepCopy(),
+			wantErr:               true,
+		},
+		{
+			name:                "with CommonConfigurator returns error on nil random IPAM",
+			commonConfigurator:  &CommonConfigurator{},
+			hostDevice:          &host.Device{Spec: host.DeviceSpec{InterfaceName: "net1"}},
+			deviceConfiguration: &v1alpha1.DeviceConfiguration{DeviceType: &deviceType},
+			networkInterfaceConfiguration: &v1alpha1.NetworkInterfaceConfiguration{
+				IPAM: []*v1alpha1.IPAM{
+					{
+						Provider: v1alpha1.IPAMProviderRandom,
+						Random:   nil,
+					},
+				},
+			},
+			allocatedDeviceStatus: hostDeviceDevice0.DeepCopy(),
+			wantErr:               true,
+		},
+		{
+			name:                          "with CommonConfigurator returns error on nil networkInterfaceConfiguration",
+			commonConfigurator:            &CommonConfigurator{},
+			hostDevice:                    &host.Device{Spec: host.DeviceSpec{InterfaceName: "net1"}},
+			deviceConfiguration:           &v1alpha1.DeviceConfiguration{DeviceType: &deviceType},
+			networkInterfaceConfiguration: nil,
+			allocatedDeviceStatus:         hostDeviceDevice0.DeepCopy(),
+			wantErr:                       true,
 		},
 		{
 			name:                  "nil allocatedDeviceStatus",
@@ -266,24 +351,10 @@ func TestHostDevice_Allocate(t *testing.T) {
 			allocatedDeviceStatus: nil,
 			wantErr:               true,
 		},
-		{
-			name:                  "nil deviceConfiguration",
-			hostDevice:            &host.Device{Spec: host.DeviceSpec{InterfaceName: "net1"}},
-			deviceConfiguration:   nil,
-			allocatedDeviceStatus: hostDeviceDevice0,
-			wantErr:               true,
-		},
-		{
-			name:                  "nil hostDevice",
-			hostDevice:            nil,
-			deviceConfiguration:   &v1alpha1.DeviceConfiguration{DeviceType: &deviceType},
-			allocatedDeviceStatus: hostDeviceDevice0,
-			wantErr:               true,
-		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var hd HostDevice
+			hd := HostDevice{CommonConfigurator: tt.commonConfigurator}
 			got, gotErr := hd.Allocate(t.Context(), tt.hostDevice, tt.deviceConfiguration, tt.networkInterfaceConfiguration, tt.allocatedDeviceStatus)
 			if gotErr != nil {
 				if !tt.wantErr {
@@ -293,6 +364,10 @@ func TestHostDevice_Allocate(t *testing.T) {
 			}
 			if tt.wantErr {
 				t.Fatal("Allocate() succeeded unexpectedly")
+			}
+			if tt.verify != nil {
+				tt.verify(t, got)
+				return
 			}
 			if !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("Allocate() = %v, want %v", got, tt.want)

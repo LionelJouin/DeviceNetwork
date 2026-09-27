@@ -159,13 +159,13 @@ func (ro *runOptions) run(ctx context.Context) error {
 
 	memoryStore := store.NewMemory()
 
-	macvlanConfigurator := &configurators.Macvlan{
-		CommonConfigurator: &configurators.CommonConfigurator{},
-	}
-	hostDeviceConfigurator := &configurators.HostDevice{}
 	deviceConfigurators := map[v1alpha1.DeviceType]configurators.Configurator{
-		v1alpha1.DeviceTypeMacvlan:    macvlanConfigurator,
-		v1alpha1.DeviceTypeHostDevice: hostDeviceConfigurator,
+		v1alpha1.DeviceTypeMacvlan: &configurators.Macvlan{
+			CommonConfigurator: &configurators.CommonConfigurator{},
+		},
+		v1alpha1.DeviceTypeHostDevice: &configurators.HostDevice{
+			CommonConfigurator: &configurators.CommonConfigurator{},
+		},
 	}
 
 	nriPlugin := nri.NewPlugin(
@@ -178,6 +178,7 @@ func (ro *runOptions) run(ctx context.Context) error {
 
 	draDriver, err := driver.Start(
 		ctx,
+		ro.podNetworkKind,
 		ro.DRADriverName,
 		ro.NodeName,
 		kubeClient,

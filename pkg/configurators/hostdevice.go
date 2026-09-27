@@ -28,17 +28,20 @@ import (
 	"github.com/vishvananda/netns"
 	resourcev1 "k8s.io/api/resource/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/klog/v2"
 	"k8s.io/utils/ptr"
 )
 
+// HostDevice is a configurator for host network devices.
 type HostDevice struct {
 	// sysfsNetRoot is the sysfs path holding the network device class, used to
 	// discover the RDMA devices backing an interface. It defaults to
 	// host.DefaultSysfsNetRoot ("/sys/class/net") in production; tests override
 	// it with a temporary directory to mock RDMA discovery.
 	sysfsNetRoot string
+
+	// CommonConfigurator is used to handle common network device allocation and configuration tasks.
+	CommonConfigurator *CommonConfigurator
 }
 
 // IsSupported reports whether the given host device can be configured
@@ -163,39 +166,16 @@ func (hd *HostDevice) Allocate(
 	}
 	allocatedDeviceStatusRes := allocatedDeviceStatus.DeepCopy()
 
-	if deviceConfiguration == nil {
-		return nil, fmt.Errorf("deviceConfiguration is nil")
+	allocatedDeviceStatusRes.NetworkData = &resourcev1.NetworkDeviceData{
+		InterfaceName: hostDevice.Spec.InterfaceName,
 	}
 
-	if hostDevice == nil {
-		return nil, fmt.Errorf("hostDevice is nil")
-	}
-
-	// if network data is nil, initialize it with a new NetworkDeviceData and set the InterfaceName to a random name.
-	if allocatedDeviceStatusRes.NetworkData == nil {
-		allocatedDeviceStatusRes.NetworkData = &resourcev1.NetworkDeviceData{
-			InterfaceName: hostDevice.Spec.InterfaceName,
-		}
-	}
-
-	resourceClaimDeviceStatusData := &status.ResourceClaimDeviceStatusData{}
-	if allocatedDeviceStatusRes.Data != nil && allocatedDeviceStatusRes.Data.Raw != nil {
-		err := json.Unmarshal(allocatedDeviceStatusRes.Data.Raw, resourceClaimDeviceStatusData)
+	if hd.CommonConfigurator != nil {
+		var err error
+		allocatedDeviceStatusRes, err = hd.CommonConfigurator.Allocate(ctx, hostDevice, networkInterfaceConfiguration, allocatedDeviceStatusRes)
 		if err != nil {
-			return nil, fmt.Errorf("failed to unmarshal allocated device status data: %v", err)
+			return nil, fmt.Errorf("failed to allocate common network data: %v", err)
 		}
-	}
-
-	resourceClaimDeviceStatusData.Device = hostDevice.DeepCopy()
-	resourceClaimDeviceStatusData.DeviceConfiguration = deviceConfiguration.DeepCopy()
-
-	resultBytes, err := json.Marshal(resourceClaimDeviceStatusData)
-	if err != nil {
-		return nil, fmt.Errorf("failed to json.Marshal result (%v): %v", resourceClaimDeviceStatusData, err)
-	}
-
-	allocatedDeviceStatusRes.Data = &runtime.RawExtension{
-		Raw: resultBytes,
 	}
 
 	return allocatedDeviceStatusRes, nil

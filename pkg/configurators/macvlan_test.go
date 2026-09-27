@@ -19,6 +19,7 @@ package configurators
 import (
 	"encoding/json"
 	"fmt"
+	"net"
 	"os"
 	"reflect"
 	"runtime"
@@ -51,34 +52,158 @@ func TestMacvlan_Allocate(t *testing.T) {
 	deviceType := v1alpha1.DeviceTypeMacvlan
 	tests := []struct {
 		name                          string
+		commonConfigurator            *CommonConfigurator
 		hostDevice                    *host.Device
 		deviceConfiguration           *v1alpha1.DeviceConfiguration
 		networkInterfaceConfiguration *v1alpha1.NetworkInterfaceConfiguration
 		allocatedDeviceStatus         *resourcev1.AllocatedDeviceStatus
 		want                          *resourcev1.AllocatedDeviceStatus
+		verify                        func(t *testing.T, got *resourcev1.AllocatedDeviceStatus)
 		wantErr                       bool
 	}{
 		{
-			name:                  "default configuration",
+			name:                  "default configuration generates random interface name",
 			hostDevice:            &host.Device{Spec: host.DeviceSpec{InterfaceName: "net1"}},
 			deviceConfiguration:   &v1alpha1.DeviceConfiguration{DeviceType: &deviceType, Macvlan: &v1alpha1.Macvlan{Mode: ptr.To(v1alpha1.MacvlanModeBridge)}},
-			allocatedDeviceStatus: device0,
-			want: func() *resourcev1.AllocatedDeviceStatus {
-				allocatedDeviceStatus := device0.DeepCopy()
-				allocatedDeviceStatus.Data = getRawExtension(&status.ResourceClaimDeviceStatusData{
-					DeviceConfiguration: &v1alpha1.DeviceConfiguration{
-						DeviceType: ptr.To(v1alpha1.DeviceTypeMacvlan), Macvlan: &v1alpha1.Macvlan{Mode: ptr.To(v1alpha1.MacvlanModeBridge)},
-					},
-					Device: &host.Device{Spec: host.DeviceSpec{InterfaceName: "net1", InterfaceIndex: 0}},
-				})
-				return allocatedDeviceStatus
-			}(),
+			allocatedDeviceStatus: device0.DeepCopy(),
+			verify: func(t *testing.T, got *resourcev1.AllocatedDeviceStatus) {
+				t.Helper()
+				if got.NetworkData == nil {
+					t.Fatalf("expected non-nil NetworkData")
+				}
+				if len(got.NetworkData.InterfaceName) != 8 {
+					t.Errorf("expected InterfaceName length 8, got %d (%s)", len(got.NetworkData.InterfaceName), got.NetworkData.InterfaceName)
+				}
+			},
 			wantErr: false,
+		},
+		{
+			name:                "nil network data generates random macvlan interface name",
+			hostDevice:          &host.Device{Spec: host.DeviceSpec{InterfaceName: "net1"}},
+			deviceConfiguration: &v1alpha1.DeviceConfiguration{DeviceType: &deviceType, Macvlan: &v1alpha1.Macvlan{Mode: ptr.To(v1alpha1.MacvlanModeBridge)}},
+			allocatedDeviceStatus: &resourcev1.AllocatedDeviceStatus{
+				Driver:     "devicenetwork.io",
+				Pool:       "pool0",
+				Device:     "device0",
+				ShareID:    ptr.To("sharedID0"),
+				Conditions: []metav1.Condition{},
+			},
+			verify: func(t *testing.T, got *resourcev1.AllocatedDeviceStatus) {
+				t.Helper()
+				if got.NetworkData == nil {
+					t.Fatalf("expected non-nil NetworkData")
+				}
+				if len(got.NetworkData.InterfaceName) != 8 {
+					t.Errorf("expected InterfaceName length 8, got %d (%s)", len(got.NetworkData.InterfaceName), got.NetworkData.InterfaceName)
+				}
+			},
+			wantErr: false,
+		},
+		{
+			name:               "with CommonConfigurator and Random IPAM allocates IP and generates random interface name",
+			commonConfigurator: &CommonConfigurator{},
+			hostDevice:         &host.Device{Spec: host.DeviceSpec{InterfaceName: "net1"}},
+			deviceConfiguration: &v1alpha1.DeviceConfiguration{
+				DeviceType: &deviceType,
+				Macvlan:    &v1alpha1.Macvlan{Mode: ptr.To(v1alpha1.MacvlanModeBridge)},
+			},
+			networkInterfaceConfiguration: &v1alpha1.NetworkInterfaceConfiguration{
+				IPAM: []*v1alpha1.IPAM{
+					{
+						Provider: v1alpha1.IPAMProviderRandom,
+						Random:   &v1alpha1.RandomIPAM{CIDR: "10.10.0.0/16"},
+					},
+				},
+			},
+			allocatedDeviceStatus: &resourcev1.AllocatedDeviceStatus{
+				Driver:     "devicenetwork.io",
+				Pool:       "pool0",
+				Device:     "device0",
+				Conditions: []metav1.Condition{},
+			},
+			verify: func(t *testing.T, got *resourcev1.AllocatedDeviceStatus) {
+				t.Helper()
+				if got.NetworkData == nil {
+					t.Fatalf("expected non-nil NetworkData")
+				}
+				if len(got.NetworkData.InterfaceName) != 8 {
+					t.Errorf("expected InterfaceName length 8, got %d (%s)", len(got.NetworkData.InterfaceName), got.NetworkData.InterfaceName)
+				}
+				if len(got.NetworkData.IPs) != 1 {
+					t.Fatalf("expected 1 allocated IP, got %d", len(got.NetworkData.IPs))
+				}
+				ip, ipNet, err := net.ParseCIDR(got.NetworkData.IPs[0])
+				if err != nil {
+					t.Fatalf("failed to parse allocated IP %s: %v", got.NetworkData.IPs[0], err)
+				}
+				_, expectedNet, _ := net.ParseCIDR("10.10.0.0/16")
+				if !expectedNet.Contains(ip) || ipNet.String() != expectedNet.String() {
+					t.Errorf("allocated IP %s is not in %s", got.NetworkData.IPs[0], "10.10.0.0/16")
+				}
+			},
+			wantErr: false,
+		},
+		{
+			name:               "with CommonConfigurator returns error on invalid IPAM CIDR",
+			commonConfigurator: &CommonConfigurator{},
+			hostDevice:         &host.Device{Spec: host.DeviceSpec{InterfaceName: "net1"}},
+			deviceConfiguration: &v1alpha1.DeviceConfiguration{
+				DeviceType: &deviceType,
+				Macvlan:    &v1alpha1.Macvlan{Mode: ptr.To(v1alpha1.MacvlanModeBridge)},
+			},
+			networkInterfaceConfiguration: &v1alpha1.NetworkInterfaceConfiguration{
+				IPAM: []*v1alpha1.IPAM{
+					{
+						Provider: v1alpha1.IPAMProviderRandom,
+						Random:   &v1alpha1.RandomIPAM{CIDR: "invalid-cidr"},
+					},
+				},
+			},
+			allocatedDeviceStatus: device0.DeepCopy(),
+			wantErr:               true,
+		},
+		{
+			name:               "with CommonConfigurator returns error on nil random IPAM",
+			commonConfigurator: &CommonConfigurator{},
+			hostDevice:         &host.Device{Spec: host.DeviceSpec{InterfaceName: "net1"}},
+			deviceConfiguration: &v1alpha1.DeviceConfiguration{
+				DeviceType: &deviceType,
+				Macvlan:    &v1alpha1.Macvlan{Mode: ptr.To(v1alpha1.MacvlanModeBridge)},
+			},
+			networkInterfaceConfiguration: &v1alpha1.NetworkInterfaceConfiguration{
+				IPAM: []*v1alpha1.IPAM{
+					{
+						Provider: v1alpha1.IPAMProviderRandom,
+						Random:   nil,
+					},
+				},
+			},
+			allocatedDeviceStatus: device0.DeepCopy(),
+			wantErr:               true,
+		},
+		{
+			name:               "with CommonConfigurator returns error on nil networkInterfaceConfiguration",
+			commonConfigurator: &CommonConfigurator{},
+			hostDevice:         &host.Device{Spec: host.DeviceSpec{InterfaceName: "net1"}},
+			deviceConfiguration: &v1alpha1.DeviceConfiguration{
+				DeviceType: &deviceType,
+				Macvlan:    &v1alpha1.Macvlan{Mode: ptr.To(v1alpha1.MacvlanModeBridge)},
+			},
+			networkInterfaceConfiguration: nil,
+			allocatedDeviceStatus:         device0.DeepCopy(),
+			wantErr:                       true,
+		},
+		{
+			name:                  "nil allocatedDeviceStatus returns error",
+			hostDevice:            &host.Device{Spec: host.DeviceSpec{InterfaceName: "net1"}},
+			deviceConfiguration:   &v1alpha1.DeviceConfiguration{DeviceType: &deviceType, Macvlan: &v1alpha1.Macvlan{Mode: ptr.To(v1alpha1.MacvlanModeBridge)}},
+			allocatedDeviceStatus: nil,
+			wantErr:               true,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var mcvln Macvlan
+			mcvln := Macvlan{CommonConfigurator: tt.commonConfigurator}
 			got, gotErr := mcvln.Allocate(t.Context(), tt.hostDevice, tt.deviceConfiguration, tt.networkInterfaceConfiguration, tt.allocatedDeviceStatus)
 			if gotErr != nil {
 				if !tt.wantErr {
@@ -88,6 +213,10 @@ func TestMacvlan_Allocate(t *testing.T) {
 			}
 			if tt.wantErr {
 				t.Fatal("Allocate() succeeded unexpectedly")
+			}
+			if tt.verify != nil {
+				tt.verify(t, got)
+				return
 			}
 			if !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("Allocate() = %v, want %v", got, tt.want)
