@@ -1,0 +1,128 @@
+name: Conformance
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  conformance:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout DeviceNetwork
+        uses: actions/checkout@v4
+
+      - name: Checkout multi-network-api
+        uses: actions/checkout@v4
+        with:
+          repository: LionelJouin/multi-network-api
+          ref: pod-network-kind-implementation
+          path: multi-network-api
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build multi-network-controller image
+        uses: docker/build-push-action@v6
+        with:
+          context: multi-network-api
+          file: multi-network-api/build/multi-network-controller/Dockerfile
+          load: true
+          tags: multi-network-controller:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build DeviceNetwork image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: build/Dockerfile
+          load: true
+          tags: devicenetwork:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Create Kind cluster
+        run: |
+          kind create cluster --config - <<EOF
+          kind: Cluster
+          apiVersion: kind.x-k8s.io/v1alpha4
+          featureGates:
+            DynamicResourceAllocation: true
+          containerdConfigPatches:
+          - |-
+            [plugins."io.containerd.nri.v1.nri"]
+              disable = false
+          nodes:
+          - role: control-plane
+            image: kindest/node@sha256:a1ed56cfb0e7b93589bdf97c8cd566405a265939e3620fc4f5de89adff580ae5
+          - role: worker
+            image: kindest/node@sha256:a1ed56cfb0e7b93589bdf97c8cd566405a265939e3620fc4f5de89adff580ae5
+          EOF
+          docker exec kind-worker ip link add dummy0 type dummy && docker exec kind-worker ip link set dummy0 up
+
+      - name: Deploy multi-network-controller
+        run: |
+          kind load docker-image multi-network-controller:latest
+          sed -i 's|image:.*|image: multi-network-controller:latest|; s|imagePullPolicy:.*|imagePullPolicy: IfNotPresent|' multi-network-api/deployment/multi-network-controller.yaml
+          kubectl apply -f multi-network-api/deployment/
+          kubectl create clusterrolebinding mnc-admin --clusterrole=cluster-admin --serviceaccount=default:multi-network-controller-service-account
+          kubectl rollout status deployment/multi-network-controller --timeout=60s
+
+      - name: Deploy DeviceNetwork
+        run: |
+          kind load docker-image devicenetwork:latest
+          sed -i 's|image:.*|image: devicenetwork:latest|; s|imagePullPolicy:.*|imagePullPolicy: IfNotPresent|' deployment/device-network.yaml
+          kubectl apply -f deployment/
+          kubectl rollout status daemonset/devicenetwork --timeout=60s
+          kubectl apply -f - <<EOF
+          apiVersion: multinetwork.networking.x-k8s.io/v1alpha1
+          kind: PodNetworkKind
+          metadata:
+            name: devicenetwork-io-devicenetwork
+          spec:
+            implementationType:
+              group: devicenetwork.io
+              kind: DeviceNetwork
+          EOF
+
+      - name: Run conformance tests
+        run: |
+          cat <<EOF > /tmp/network.yaml
+          apiVersion: devicenetwork.io/v1alpha1
+          kind: DeviceNetwork
+          metadata:
+            name: my-network
+          spec:
+            deviceSelectors:
+            - name: "dummy-interfaces"
+              nodeSelector:
+                nodeSelectorTerms:
+                - matchExpressions:
+                  - key: node-role.kubernetes.io/control-plane
+                    operator: DoesNotExist
+              selectors:
+              - cel:
+                  expression: interfaceName.startsWith("dummy")
+            deviceConfigurations:
+            - name: "macvlan"
+              deviceType: Macvlan
+              deviceSelectors:
+              - "dummy-interfaces"
+            networkInterfaceConfiguration:
+              ipam:
+              - provider: Random
+                random:
+                  cidr: "192.168.1.0/24"
+          EOF
+          make -C multi-network-api test-conformance CONFORMANCE_ARGS="-implementation-group=devicenetwork.io -implementation-kind=DeviceNetwork -network-manifest=/tmp/network.yaml"
