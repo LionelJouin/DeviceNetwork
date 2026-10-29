@@ -17,12 +17,12 @@ jobs:
       - name: Checkout DeviceNetwork
         uses: actions/checkout@v4
 
-      - name: Checkout multi-network-api
+      - name: Checkout multi-network
         uses: actions/checkout@v4
         with:
-          repository: LionelJouin/multi-network-api
-          ref: pod-network-kind-implementation
-          path: multi-network-api
+          repository: LionelJouin/multi-network
+          ref: podnetworkkind-init
+          path: multi-network
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -35,8 +35,8 @@ jobs:
       - name: Build multi-network-controller image
         uses: docker/build-push-action@v6
         with:
-          context: multi-network-api
-          file: multi-network-api/build/multi-network-controller/Dockerfile
+          context: multi-network
+          file: multi-network/build/multi-network-controller/Dockerfile
           load: true
           tags: multi-network-controller:latest
           cache-from: type=gha
@@ -73,9 +73,10 @@ jobs:
 
       - name: Deploy multi-network-controller
         run: |
+          make -C multi-network install-crds
           kind load docker-image multi-network-controller:latest
-          sed -i 's|image:.*|image: multi-network-controller:latest|; s|imagePullPolicy:.*|imagePullPolicy: IfNotPresent|' multi-network-api/deployment/multi-network-controller.yaml
-          kubectl apply -f multi-network-api/deployment/
+          sed -i 's|image:.*|image: multi-network-controller:latest|' multi-network/deployment/multi-network-controller.yaml
+          kubectl apply -f multi-network/deployment/
           kubectl create clusterrolebinding mnc-admin --clusterrole=cluster-admin --serviceaccount=default:multi-network-controller-service-account
           kubectl rollout status deployment/multi-network-controller --timeout=60s
 
@@ -125,4 +126,4 @@ jobs:
                 random:
                   cidr: "192.168.1.0/24"
           EOF
-          make -C multi-network-api test-conformance CONFORMANCE_ARGS="-implementation-group=devicenetwork.io -implementation-kind=DeviceNetwork -network-manifest=/tmp/network.yaml"
+          make -C multi-network test-conformance CONFORMANCE_ARGS="-implementation-group=devicenetwork.io -implementation-kind=DeviceNetwork -network-manifest=/tmp/network.yaml"

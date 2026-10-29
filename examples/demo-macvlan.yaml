@@ -14,7 +14,7 @@ spec:
           count: 1
           selectors:
           - cel:
-              expression: device.attributes["multinetwork.networking.k8s.io"].podNetwork == "my-network" && device.attributes["devicenetwork.io"].deviceConfiguration == "macvlan"
+              expression: device.attributes["multinetwork.networking.x-k8s.io"].podNetwork == "my-network" && device.attributes["devicenetwork.io"].deviceConfiguration == "macvlan"
 ---
 apiVersion: apps/v1
 kind: Deployment

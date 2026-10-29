@@ -376,7 +376,7 @@ This example selects all host network devices across the cluster and exposes the
 
 HostNetworkDevice:
 ```yaml
-apiVersion: multinetwork.networking.k8s.io/v1alpha1
+apiVersion: multinetwork.networking.x-k8s.io/v1alpha1
 kind: HostNetworkDevice
 metadata:
   name: all-interfaces-network
@@ -439,7 +439,7 @@ This example illustrates how multiple `HostNetworkDevice` objects and multiple `
 
 HostNetworkDevice:
 ```yaml
-apiVersion: multinetwork.networking.k8s.io/v1alpha1
+apiVersion: multinetwork.networking.x-k8s.io/v1alpha1
 kind: HostNetworkDevice
 metadata:
   name: blue-network
@@ -456,7 +456,7 @@ spec:
     deviceSelectors:
     - "all-interfaces"
 ---
-apiVersion: multinetwork.networking.k8s.io/v1alpha1
+apiVersion: multinetwork.networking.x-k8s.io/v1alpha1
 kind: HostNetworkDevice
 metadata:
   name: red-network

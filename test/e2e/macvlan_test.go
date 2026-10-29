@@ -34,6 +34,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/remotecommand"
+	multinetworkv1alpha1 "sigs.k8s.io/multi-network-api/apis/v1alpha1"
 )
 
 // execInPod runs command in the given container of a pod and returns its
@@ -153,7 +154,8 @@ var _ = Describe("Macvlan", func() {
 										{
 											CEL: &resourcev1.CELDeviceSelector{
 												Expression: fmt.Sprintf(
-													`device.attributes["multinetwork.networking.k8s.io"].podNetwork == %q && device.attributes["devicenetwork.io"].deviceConfiguration == "macvlan"`,
+													`device.attributes[%q].podNetwork == %q && device.attributes["devicenetwork.io"].deviceConfiguration == "macvlan"`,
+													multinetworkv1alpha1.StandardDeviceAttributePrefix,
 													networkName,
 												),
 											},

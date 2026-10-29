@@ -16,15 +16,14 @@ limitations under the License.
 package status
 
 import (
-	multinetworkv1alpha1 "github.com/kubernetes-sigs/multi-network-api/apis/v1alpha1"
 	"github.com/lioneljouin/devicenetwork/apis/v1alpha1"
 	"github.com/lioneljouin/devicenetwork/pkg/host"
+	multinetworkv1alpha1 "sigs.k8s.io/multi-network-api/apis/v1alpha1"
 )
 
 // ResourceClaimDeviceStatusData represents the status data for a device in a ResourceClaim.
 type ResourceClaimDeviceStatusData struct {
-	// PodNetwork is the pod network to which the device is attached.
-	PodNetwork *multinetworkv1alpha1.PodNetwork `json:"podNetwork,omitempty"`
+	multinetworkv1alpha1.DeviceStatus
 
 	// DeviceConfiguration is the configuration for the device.
 	DeviceConfiguration *v1alpha1.DeviceConfiguration `json:"deviceConfiguration,omitempty"`

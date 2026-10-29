@@ -17,7 +17,7 @@ limitations under the License.
 package v1alpha1
 
 import (
-	multinetworkv1alpha1 "github.com/kubernetes-sigs/multi-network-api/apis/v1alpha1"
+	multinetworkv1alpha1 "sigs.k8s.io/multi-network-api/apis/v1alpha1"
 )
 
 // NetworkInterfaceAttribute represents the attributes of a network interface.

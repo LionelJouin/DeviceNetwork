@@ -54,7 +54,7 @@ spec:
         exactly:
           selectors:
           - cel: # podNetwork attribute is set by DeviceNetwork to the name of the DeviceNetwork resource.
-              expression: device.attributes["multinetwork.networking.k8s.io"].podNetwork == "my-network"
+              expression: device.attributes["multinetwork.networking.x-k8s.io"].podNetwork == "my-network"
 ---
 apiVersion: v1
 kind: Pod

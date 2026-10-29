@@ -7,7 +7,6 @@ require (
 	github.com/google/cel-go v0.29.2
 	github.com/google/go-cmp v0.7.0
 	github.com/jaypipes/ghw v0.25.0
-	github.com/kubernetes-sigs/multi-network-api v0.0.0-00010101000000-000000000000
 	github.com/onsi/ginkgo/v2 v2.33.0
 	github.com/onsi/gomega v1.43.1
 	github.com/spf13/cobra v1.10.2
@@ -22,6 +21,7 @@ require (
 	k8s.io/klog/v2 v2.140.0
 	k8s.io/utils v0.0.0-20260707023825-cf1189d6abe3
 	sigs.k8s.io/controller-tools v0.22.0
+	sigs.k8s.io/multi-network-api v0.0.0-00010101000000-000000000000
 )
 
 require (
@@ -119,4 +119,4 @@ require (
 	tags.cncf.io/container-device-interface/specs-go v1.1.0 // indirect
 )
 
-replace github.com/kubernetes-sigs/multi-network-api => github.com/LionelJouin/multi-network-api v0.0.0-20260925123112-7a63143af7c8
+replace sigs.k8s.io/multi-network-api => github.com/LionelJouin/multi-network-api v0.0.0-20261029151823-4c94bcb57d9d

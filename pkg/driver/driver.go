@@ -27,7 +27,6 @@ import (
 	"path/filepath"
 	"time"
 
-	multinetworkv1alpha1 "github.com/kubernetes-sigs/multi-network-api/apis/v1alpha1"
 	"github.com/lioneljouin/devicenetwork/apis/v1alpha1"
 	"github.com/lioneljouin/devicenetwork/pkg/configurators"
 	"github.com/lioneljouin/devicenetwork/pkg/resolver"
@@ -44,6 +43,7 @@ import (
 	"k8s.io/dynamic-resource-allocation/kubeletplugin"
 	"k8s.io/dynamic-resource-allocation/resourceslice"
 	"k8s.io/klog/v2"
+	multinetworkv1alpha1 "sigs.k8s.io/multi-network-api/apis/v1alpha1"
 )
 
 var _ kubeletplugin.DRAPlugin = &Driver{}

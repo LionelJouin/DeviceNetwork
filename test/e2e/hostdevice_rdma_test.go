@@ -30,6 +30,7 @@ import (
 	resourcev1 "k8s.io/api/resource/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	multinetworkv1alpha1 "sigs.k8s.io/multi-network-api/apis/v1alpha1"
 )
 
 var _ = Describe("HostDevice RDMA", func() {
@@ -114,7 +115,8 @@ var _ = Describe("HostDevice RDMA", func() {
 										{
 											CEL: &resourcev1.CELDeviceSelector{
 												Expression: fmt.Sprintf(
-													`device.attributes["multinetwork.networking.k8s.io"].podNetwork == %q && device.attributes["devicenetwork.io"].deviceConfiguration == "host-device"`,
+													`device.attributes[%q].podNetwork == %q && device.attributes["devicenetwork.io"].deviceConfiguration == "host-device"`,
+													multinetworkv1alpha1.StandardDeviceAttributePrefix,
 													networkName,
 												),
 											},

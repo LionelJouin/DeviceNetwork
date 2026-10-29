@@ -208,9 +208,9 @@ spec:
         string: Macvlan
       devicenetwork.io/hostDeviceName:
         string: dummy0
-      multinetwork.networking.k8s.io/networkKind:
+      multinetwork.networking.x-k8s.io/podNetworkKind:
         string: devicenetwork-io-devicenetwork
-      multinetwork.networking.k8s.io/podNetwork:
+      multinetwork.networking.x-k8s.io/podNetwork:
         string: my-network
     capacity:
       devicenetwork.io/maxVirtualInterfaces:
@@ -233,9 +233,9 @@ spec:
         string: HostDevice
       devicenetwork.io/hostDeviceName:
         string: dummy0
-      multinetwork.networking.k8s.io/networkKind:
+      multinetwork.networking.x-k8s.io/podNetworkKind:
         string: devicenetwork-io-devicenetwork
-      multinetwork.networking.k8s.io/podNetwork:
+      multinetwork.networking.x-k8s.io/podNetwork:
         string: my-network
     consumesCounters:
     - counterSet: dummy0
@@ -321,7 +321,7 @@ spec:
         deviceClassName: devicenetwork
         selectors:
         - cel:
-            expression: device.attributes["multinetwork.networking.k8s.io"].podNetwork
+            expression: device.attributes["multinetwork.networking.x-k8s.io"].podNetwork
               == "my-network" && device.attributes["devicenetwork.io"].deviceConfiguration
               == "macvlan"
       name: my-network-macvlan
